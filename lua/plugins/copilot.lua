@@ -96,6 +96,16 @@ return {
           Optimize = "Optimize the following code:",
           Docs = "Write documentation for the following code:",
         },
+        context = {
+          -- Enable showing context from the file
+          enable = true,
+          -- Maximum number of lines to show from the file
+          max_lines = 20,
+          -- Show line numbers in context from file
+          show_line_numbers = true,
+          -- Indicator for truncated lines in context
+          line_numbers_omit_symbol = "⋯",
+        },
       })
 
       -- Set up an autocmd to handle window positioning
@@ -108,13 +118,26 @@ return {
           vim.cmd("vertical resize " .. math.floor(vim.o.columns * 0.4))
         end,
       })
+
+      -- Function to handle file context
+      local function copilot_chat_with_file()
+        vim.ui.input({ prompt = "Enter file path: " }, function(input)
+          if input and input ~= "" then
+            local cmd = string.format("CopilotChat #file %s", input)
+            vim.cmd(cmd)
+          end
+        end)
+      end
+
+      -- Add the keybinding for file context
+      vim.keymap.set("n", "<leader>cf", copilot_chat_with_file, { desc = "CopilotChat - Chat with file context" })
     end,
     keys = {
       { "<leader>cc", "<cmd>CopilotChatToggle<CR>", desc = "CopilotChat - Toggle" },
       { "<leader>ce", "<cmd>CopilotChatExplain<CR>", desc = "CopilotChat - Explain code" },
       { "<leader>ct", "<cmd>CopilotChatTests<CR>", desc = "CopilotChat - Generate tests" },
       { "<leader>cr", "<cmd>CopilotChatReview<CR>", desc = "CopilotChat - Review code" },
-      { "<leader>cf", "<cmd>CopilotChatFix<CR>", desc = "CopilotChat - Fix code" },
+      { "<leader>cx", "<cmd>CopilotChatFix<CR>", desc = "CopilotChat - Fix code" }, -- Changed from cf to cx
       { "<leader>co", "<cmd>CopilotChatOptimize<CR>", desc = "CopilotChat - Optimize code" },
       { "<leader>cd", "<cmd>CopilotChatDocs<CR>", desc = "CopilotChat - Document code" },
       {
