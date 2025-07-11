@@ -36,10 +36,13 @@ opt.foldcolumn = "1"
 -- Cursor settings
 opt.guicursor = "n-v-c-sm:block,i-ci-ve:ver25,r-cr-o:hor20,a:blinkon0"
 
--- Kernel development specific settings
-opt.tabstop = 8
-opt.shiftwidth = 8
-opt.expandtab = false
+-- Consistent 4-space indentation
+opt.tabstop = 4
+opt.shiftwidth = 4
+opt.softtabstop = 4
+opt.expandtab = true
+opt.smartindent = true
+opt.autoindent = true
 opt.textwidth = 80
 
 -- Clipboard setting (scheduled)

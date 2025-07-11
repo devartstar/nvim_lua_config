@@ -16,8 +16,7 @@ return {
     opts = {
       notify_on_error = false,
       format_on_save = function(bufnr)
-        local disable_filetypes = { c = true, cpp = true }
-        return disable_filetypes[vim.bo[bufnr].filetype] and nil or {
+        return {
           timeout_ms = 500,
           lsp_format = 'fallback',
         }
@@ -26,6 +25,23 @@ return {
         lua = { 'stylua' },
         c = { 'clang-format' },
         cpp = { 'clang-format' },
+      },
+      formatters = {
+        ['clang-format'] = {
+          prepend_args = {
+            '--style={IndentWidth: 4, TabWidth: 4, UseTab: Never, ColumnLimit: 80, AccessModifierOffset: -4}',
+          },
+        },
+        stylua = {
+          prepend_args = {
+            '--indent-type',
+            'Spaces',
+            '--indent-width',
+            '4',
+            '--column-width',
+            '80',
+          },
+        },
       },
     },
   },

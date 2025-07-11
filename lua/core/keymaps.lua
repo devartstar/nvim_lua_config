@@ -24,11 +24,11 @@ keymap('n', '<leader>zM', 'zM', { desc = 'Close all folds' })
 keymap('n', '<leader>zr', 'zr', { desc = 'Open one level of folds' })
 keymap('n', '<leader>zm', 'zm', { desc = 'Close one level of folds' })
 
--- Kernel development specific keymaps
+-- Development specific keymaps (updated from kernel-specific)
 keymap('n', '<leader>kc', ':e %:p:s,.h$,.X123X,:s,.c$,.h,:s,.X123X$,.c,<CR>', { desc = "Swap between .c and .h file" })
-keymap('n', '<leader>kt', ':new term://pwsh<CR>make test<CR>', { desc = "Run kernel tests" })
-keymap('n', '<leader>km', ':new term://pwsh<CR>make<CR>', { desc = "Build kernel module" })
-keymap('n', '<leader>kd', ':new term://pwsh<CR>make clean<CR>', { desc = "Clean kernel build" })
+keymap('n', '<leader>kt', ':new term://pwsh<CR>make test<CR>', { desc = "Run tests" })
+keymap('n', '<leader>km', ':new term://pwsh<CR>make<CR>', { desc = "Build project" })
+keymap('n', '<leader>kd', ':new term://pwsh<CR>make clean<CR>', { desc = "Clean build" })
 
 -- Help keymaps
 vim.keymap.set('n', '<leader>h?', function()

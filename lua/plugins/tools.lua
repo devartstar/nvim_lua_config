@@ -20,6 +20,24 @@ return {
     end,
   },
 
-  -- Indent detection
-  { 'NMAC427/guess-indent.nvim' },
+  -- Indent detection with 4-space preference
+  { 
+    'NMAC427/guess-indent.nvim',
+    config = function()
+      require('guess-indent').setup({
+        auto_cmd = true,
+        override_editorconfig = false,
+        filetype_exclude = {},
+        buftype_exclude = {
+          "help",
+          "nofile",
+          "terminal",
+          "prompt",
+        },
+        -- Prefer 4 spaces when detection is unclear
+        indent_width_preference = 4,
+        space_indent_width = 4,
+      })
+    end,
+  },
 }
