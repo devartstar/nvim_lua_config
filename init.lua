@@ -93,35 +93,64 @@ require('core.autocmds')
 -- Bootstrap lazy.nvim package manager
 local lazypath = vim.fn.stdpath('data') .. '/lazy/lazy.nvim'
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
-  local lazyrepo = 'https://github.com/folke/lazy.nvim.git'
-  vim.fn.system({
-    'git', 'clone', '--filter=blob:none', '--branch=stable', lazyrepo, lazypath
-  })
+	local lazyrepo = 'https://github.com/folke/lazy.nvim.git'
+	vim.fn.system({
+		'git', 'clone', '--filter=blob:none', '--branch=stable', lazyrepo, lazypath
+	})
 end
 vim.opt.rtp:prepend(lazypath)
 
 -- Load plugins
 require('lazy').setup('plugins', {
-  ui = {
-    icons = vim.g.have_nerd_font and {} or {
-      cmd = '⌘', config = '🛠', event = '📅', ft = '📂', init = '⚙',
-      keys = '🗝', plugin = '🔌', runtime = '💻', require = '🌙',
-      source = '📄', start = '🚀', task = '📌', lazy = '💤 ',
-    },
-  },
+	ui = {
+		icons = vim.g.have_nerd_font and {} or {
+			cmd = '⌘',
+			config = '🛠',
+			event = '📅',
+			ft = '📂',
+			init = '⚙',
+			keys = '🗝',
+			plugin = '🔌',
+			runtime = '💻',
+			require = '🌙',
+			source = '📄',
+			start = '🚀',
+			task = '📌',
+			lazy = '💤 ',
+		},
+	},
 })
 
 -- Kernel development specific settings
-vim.opt.tabstop = 8        -- Kernel style uses 8 space tabs
-vim.opt.shiftwidth = 8     -- Use 8 spaces for indentation
-vim.opt.expandtab = false  -- Use real tabs, not spaces
-vim.opt.textwidth = 80     -- Linux kernel style
+vim.opt.tabstop = 4       -- Kernel style uses 8 space tabs
+vim.opt.shiftwidth = 4    -- Use 8 spaces for indentation
+vim.opt.expandtab = false -- Use real tabs, not spaces
+vim.opt.textwidth = 80    -- Linux kernel style
+
+-- Show buffers only in the current tab
+vim.api.nvim_create_user_command(
+	"TabBuffers",
+	function()
+		local bufs = vim.fn.tabpagebuflist()
+		local names = vim.tbl_map(function(b)
+			return string.format("%d -> %s", b, vim.fn.bufname(b))
+		end, bufs)
+		print(vim.inspect(names))
+	end,
+	{}
+)
 
 -- Special kernel development keymaps
-vim.keymap.set('n', '<leader>kc', ':e %:p:s,.h$,.X123X,:s,.c$,.h,:s,.X123X$,.c,<CR>', { desc = "Swap between .c and .h file" })
+vim.keymap.set('n', '<leader>kc', ':e %:p:s,.h$,.X123X,:s,.c$,.h,:s,.X123X$,.c,<CR>',
+	{ desc = "Swap between .c and .h file" })
 vim.keymap.set('n', '<leader>kt', ':new term://pwsh<CR>make test<CR>', { desc = "Run kernel tests" })
 vim.keymap.set('n', '<leader>km', ':new term://pwsh<CR>make<CR>', { desc = "Build kernel module" })
 vim.keymap.set('n', '<leader>kd', ':new term://pwsh<CR>make clean<CR>', { desc = "Clean kernel build" })
+-- Use Telescope (recommended)
+vim.keymap.set("n", "<leader>g", function()
+	local word = vim.fn.expand("<cword>")
+	require("telescope.builtin").grep_string({ search = word })
+end, { desc = "Grep for word under cursor" })
 
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et

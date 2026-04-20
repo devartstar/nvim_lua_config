@@ -9,7 +9,7 @@ return {
         install_root_dir = vim.fn.stdpath("data") .. "/mason",
         PATH = "append",
       })
-      
+
       -- Ensure core packages are installed
       local registry = require("mason-registry")
       local function ensure_installed()
@@ -29,6 +29,7 @@ return {
     "williamboman/mason-lspconfig.nvim",
     dependencies = { "williamboman/mason.nvim" },
     opts = {
+      handlers = {},
       automatic_installation = false,
     },
   },
@@ -44,7 +45,7 @@ return {
     },
     config = function()
       local lspconfig = require('lspconfig')
-      
+
       -- Server configurations
       local servers = {
         clangd = {
@@ -68,15 +69,25 @@ return {
         },
       }
 
+      local disabled_servers = {
+        jsonls = true,
+        html = true,
+        cssls = true,
+        tsserver = true,
+        eslint = true,
+      }
+
       -- Setup each server
       for server_name, config in pairs(servers) do
-        config.capabilities = vim.tbl_deep_extend(
-          'force',
-          {},
-          require('blink.cmp').get_lsp_capabilities(),
-          config.capabilities or {}
-        )
-        lspconfig[server_name].setup(config)
+        if not disabled_servers[server_name] then
+          config.capabilities = vim.tbl_deep_extend(
+            'force',
+            {},
+            require('blink.cmp').get_lsp_capabilities(),
+            config.capabilities or {}
+          )
+          lspconfig[server_name].setup(config)
+        end
       end
 
       -- LSP attach handler setup
@@ -94,7 +105,7 @@ return {
           map('gD', vim.lsp.buf.declaration, '[G]oto [D]eclaration')
           map('K', vim.lsp.buf.hover, 'Hover Documentation')
           map('gK', vim.lsp.buf.signature_help, 'Signature Documentation')
-          
+
           -- Workspace commands
           map('<leader>wa', vim.lsp.buf.add_workspace_folder, '[W]orkspace [A]dd Folder')
           map('<leader>wr', vim.lsp.buf.remove_workspace_folder, '[W]orkspace [R]emove Folder')
@@ -105,16 +116,16 @@ return {
           -- Code actions
           map('<leader>rn', vim.lsp.buf.rename, '[R]e[n]ame')
           map('<leader>ca', vim.lsp.buf.code_action, '[C]ode [A]ction')
-          
+
           -- Symbol navigation
           map('<leader>ds', require('telescope.builtin').lsp_document_symbols, '[D]ocument [S]ymbols')
           map('<leader>ws', require('telescope.builtin').lsp_dynamic_workspace_symbols, '[W]orkspace [S]ymbols')
-          
+
           -- Setup inlay hints if supported
           local client = vim.lsp.get_client_by_id(event.data.client_id)
-          local supports_method = vim.fn.has('nvim-0.11') == 1 
-            and client.supports_method("textDocument/inlayHint", { bufnr = event.buf })
-            or client.supports_method("textDocument/inlayHint", { bufnr = event.buf })
+          local supports_method = vim.fn.has('nvim-0.11') == 1
+              and client.supports_method("textDocument/inlayHint", { bufnr = event.buf })
+              or client.supports_method("textDocument/inlayHint", { bufnr = event.buf })
 
           if client and supports_method then
             map('<leader>th', function()
