@@ -23,13 +23,14 @@ return {
           -- sits to the side (horizontal). This applies to every picker.
           layout_strategy = 'flex',
           layout_config = {
-            flip_columns = 130,
             width = 0.9,
             height = 0.9,
             prompt_position = 'top',
             horizontal = {
               preview_width = 0.55,
-              preview_cutoff = 120,
+              -- doubles as the flex flip threshold: below this many columns
+              -- the layout switches to vertical (preview below results)
+              preview_cutoff = 130,
             },
             vertical = {
               -- always show the preview, even on short windows

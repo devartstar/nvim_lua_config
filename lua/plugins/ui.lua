@@ -55,6 +55,7 @@ return {
         { '<leader>h', group = 'Git [H]unk', mode = { 'n', 'v' } },
         { '<leader>b', group = '[B]uffer' },
         { '<leader>z', group = 'Folds' },
+        { '<leader>c', group = '[C]opilot / Chat' },
       },
     },
   },
@@ -62,7 +63,10 @@ return {
   -- Statusline: shows mode, git branch, diagnostics, file info at a glance
   {
     'nvim-lualine/lualine.nvim',
-    dependencies = { 'nvim-tree/nvim-web-devicons' },
+    dependencies = {
+      'nvim-tree/nvim-web-devicons',
+      'AndreM222/copilot-lualine',
+    },
     event = 'VeryLazy',
     opts = {
       options = {
@@ -76,7 +80,27 @@ return {
         lualine_a = { 'mode' },
         lualine_b = { 'branch', 'diff', 'diagnostics' },
         lualine_c = { { 'filename', path = 1 } },
-        lualine_x = { 'encoding', 'fileformat', 'filetype' },
+        lualine_x = {
+          {
+            'copilot',
+            show_colors = true,
+            -- readable status text when a Nerd Font isn't available
+            symbols = vim.g.have_nerd_font and nil or {
+              status = {
+                icons = {
+                  enabled = ' AI',
+                  sleep = ' zZ',
+                  disabled = ' off',
+                  warning = ' AI!',
+                  unknown = ' AI?',
+                },
+              },
+            },
+          },
+          'encoding',
+          'fileformat',
+          'filetype',
+        },
         lualine_y = { 'progress' },
         lualine_z = { 'location' },
       },
