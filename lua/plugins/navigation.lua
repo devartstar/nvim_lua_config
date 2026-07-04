@@ -16,6 +16,35 @@ return {
     },
     config = function()
       require('telescope').setup {
+        defaults = {
+          -- `flex` automatically switches between a horizontal and a vertical
+          -- layout depending on the window width. Below `flip_columns` the
+          -- preview moves *below* the results (vertical); above it, the preview
+          -- sits to the side (horizontal). This applies to every picker.
+          layout_strategy = 'flex',
+          layout_config = {
+            flip_columns = 130,
+            width = 0.9,
+            height = 0.9,
+            prompt_position = 'top',
+            horizontal = {
+              preview_width = 0.55,
+              preview_cutoff = 120,
+            },
+            vertical = {
+              -- always show the preview, even on short windows
+              preview_cutoff = 0,
+              preview_height = 0.5,
+              mirror = true,
+            },
+          },
+          -- with the prompt on top, results should grow downward
+          sorting_strategy = 'ascending',
+          -- keep long paths readable by trimming the middle
+          path_display = { 'truncate' },
+          dynamic_preview_title = true,
+          winblend = 0,
+        },
         extensions = {
           ['ui-select'] = {
             require('telescope.themes').get_dropdown(),
