@@ -15,6 +15,24 @@ keymap('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
 keymap('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
 keymap('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 
+-- Buffer navigation
+keymap('n', '<Tab>', ':bnext<CR>', { silent = true, desc = 'Next buffer' })
+keymap('n', '<S-Tab>', ':bprevious<CR>', { silent = true, desc = 'Previous buffer' })
+keymap('n', '<leader>bd', ':bdelete<CR>', { silent = true, desc = '[B]uffer [D]elete' })
+keymap('n', '<leader>bn', ':bnext<CR>', { silent = true, desc = '[B]uffer [N]ext' })
+keymap('n', '<leader>bp', ':bprevious<CR>', { silent = true, desc = '[B]uffer [P]revious' })
+
+-- Move selected lines up/down (keeps indentation)
+keymap('v', 'J', ":m '>+1<CR>gv=gv", { desc = 'Move selection down' })
+keymap('v', 'K', ":m '<-2<CR>gv=gv", { desc = 'Move selection up' })
+
+-- Keep cursor centered when scrolling / searching
+keymap('n', '<C-d>', '<C-d>zz', { desc = 'Scroll down and center' })
+keymap('n', '<C-u>', '<C-u>zz', { desc = 'Scroll up and center' })
+keymap('n', 'n', 'nzzzv', { desc = 'Next search result centered' })
+keymap('n', 'N', 'Nzzzv', { desc = 'Previous search result centered' })
+
+
 -- Folding keymaps
 keymap('n', '<leader>zf', 'za', { desc = 'Toggle [F]old under cursor' })
 keymap('n', '<leader>zc', 'zc', { desc = '[C]lose fold under cursor' })

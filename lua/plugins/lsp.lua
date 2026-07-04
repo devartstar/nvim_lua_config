@@ -44,8 +44,6 @@ return {
       'saghen/blink.cmp',
     },
     config = function()
-      local lspconfig = require('lspconfig')
-
       -- Server configurations
       local servers = {
         clangd = {
@@ -77,16 +75,16 @@ return {
         eslint = true,
       }
 
-      -- Setup each server
+      -- Apply completion capabilities (from blink.cmp) to every server
+      vim.lsp.config('*', {
+        capabilities = require('blink.cmp').get_lsp_capabilities(),
+      })
+
+      -- Setup each server using the modern vim.lsp.config/enable API (nvim 0.11+)
       for server_name, config in pairs(servers) do
         if not disabled_servers[server_name] then
-          config.capabilities = vim.tbl_deep_extend(
-            'force',
-            {},
-            require('blink.cmp').get_lsp_capabilities(),
-            config.capabilities or {}
-          )
-          lspconfig[server_name].setup(config)
+          vim.lsp.config(server_name, config)
+          vim.lsp.enable(server_name)
         end
       end
 

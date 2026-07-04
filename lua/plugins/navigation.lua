@@ -163,4 +163,59 @@ return {
       vim.keymap.set("n", "<leader>ah", ":Other<CR>", { noremap = true, silent = true, desc = "Switch header/source" })
     end,
   },
+
+  -- Flash: jump anywhere on screen with a few keystrokes (like easymotion/leap)
+  {
+    'folke/flash.nvim',
+    event = 'VeryLazy',
+    opts = {
+      labels = 'asdfghjklqwertyuiopzxcvbnm',
+      label = {
+        uppercase = false,
+        -- draw the jump label on TOP of the match so it stands out
+        style = 'overlay',
+      },
+      highlight = {
+        -- dim everything except the matches so labels pop
+        backdrop = true,
+      },
+      modes = {
+        -- supercharge f / t / F / T with jump labels
+        char = {
+          enabled = true,
+          jump_labels = true,
+        },
+        -- show labels while using / and ? search
+        search = {
+          enabled = true,
+        },
+      },
+    },
+    config = function(_, opts)
+      require('flash').setup(opts)
+
+      -- One prominent color for the jump label: bold white on hot magenta,
+      -- deliberately different from yellow (which marks search/find matches).
+      local function flash_highlights()
+        vim.api.nvim_set_hl(0, 'FlashLabel', { fg = '#ffffff', bg = '#ff2d7e', bold = true })
+        -- non-target matches stay subtle so the magenta label stands out
+        vim.api.nvim_set_hl(0, 'FlashMatch', { fg = '#c0caf5', bg = '#3b4261', bold = false })
+        vim.api.nvim_set_hl(0, 'FlashCurrent', { fg = '#1e1e2e', bg = '#7dcfff', bold = true })
+      end
+
+      flash_highlights()
+
+      -- Re-apply after a colorscheme change so it isn't overwritten
+      vim.api.nvim_create_autocmd('ColorScheme', {
+        group = vim.api.nvim_create_augroup('flash-highlights', { clear = true }),
+        callback = flash_highlights,
+      })
+    end,
+    keys = {
+      { 's', mode = { 'n', 'x', 'o' }, function() require('flash').jump() end, desc = 'Flash jump' },
+      { 'S', mode = { 'n', 'x', 'o' }, function() require('flash').treesitter() end, desc = 'Flash Treesitter' },
+      { 'r', mode = 'o', function() require('flash').remote() end, desc = 'Remote Flash' },
+      { 'R', mode = { 'o', 'x' }, function() require('flash').treesitter_search() end, desc = 'Treesitter Search' },
+    },
+  },
 }
