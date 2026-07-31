@@ -56,6 +56,7 @@ return {
         { '<leader>b', group = '[B]uffer' },
         { '<leader>z', group = 'Folds' },
         { '<leader>c', group = '[C]opilot / Chat' },
+        { '<leader>m', group = '[M]arkdown' },
       },
     },
   },

@@ -14,4 +14,5 @@ return {
   require('plugins.tools'),     -- Development tools
   require('plugins.copilot'),   -- GitHub Copilot
   require('plugins.clangd'),    -- Clangd specific settings
+  require('plugins.markdown'),  -- Markdown browser preview (Mermaid, math)
 }
