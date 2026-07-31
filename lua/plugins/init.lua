@@ -15,4 +15,5 @@ return {
   require('plugins.copilot'),   -- GitHub Copilot
   require('plugins.clangd'),    -- Clangd specific settings
   require('plugins.markdown'),  -- Markdown browser preview (Mermaid, math)
+  require('plugins.tasks'),     -- Task runner (Makefile targets via overseer)
 }

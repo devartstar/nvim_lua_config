@@ -57,6 +57,7 @@ return {
         { '<leader>z', group = 'Folds' },
         { '<leader>c', group = '[C]opilot / Chat' },
         { '<leader>m', group = '[M]arkdown' },
+        { '<leader>r', group = '[R]un / Tasks' },
       },
     },
   },
