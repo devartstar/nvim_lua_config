@@ -1,0 +1,19 @@
+# Essential public VS Code extensions for this setup.
+# Install with:  Get-Content extensions.txt | ForEach-Object { code --install-extension $_ }
+# (bootstrap.ps1 does this for you.)
+#
+# Your other extensions replicate automatically between your own machines via
+# VS Code Settings Sync. Microsoft-internal extensions are intentionally left
+# out here because they are not on the public marketplace.
+
+# The core of the whole setup: real Neovim as the VS Code editing engine.
+asvetliakov.vscode-neovim
+
+# C / C++ / kernel dev (core.vscode.lua maps header/source switch to C_Cpp.SwitchHeaderSource).
+ms-vscode.cpptools
+ms-vscode.cpptools-extension-pack
+ms-vscode.cmake-tools
+
+# Quality-of-life (optional but part of the baseline experience).
+eamodio.gitlens
+gruntfuggly.todo-tree

@@ -1,0 +1,38 @@
+// ===========================================================================
+// VS Code settings baseline for the vscode-neovim + Neovim TUI setup.
+//
+// This is a CURATED SUBSET containing only the keys this setup needs. It is
+// meant to be MERGED into your machine's own settings.json, never to replace
+// it. On your own machines, VS Code Settings Sync keeps the live copies in
+// sync automatically; this file is the reproducible baseline / documentation.
+//
+// See SETUP-VSCODE.md for how everything fits together.
+// ===========================================================================
+{
+    // --- vscode-neovim: use the real Neovim binary + your ~/AppData/Local/nvim config ---
+    "vscode-neovim.neovimExecutablePaths.win32": "C:\\Program Files\\Neovim\\bin\\nvim.exe",
+
+    // Give vscode-neovim its own extension host process (recommended by the extension).
+    "extensions.experimental.affinity": {
+        "asvetliakov.vscode-neovim": 1
+    },
+
+    // --- Fonts: FiraCode Nerd Font (glyphs for the file tree / statusline icons) ---
+    "editor.fontFamily": "'FiraCode Nerd Font', 'Fira Code', Consolas, 'Courier New', monospace",
+    "editor.fontLigatures": true,
+    "terminal.integrated.fontFamily": "'FiraCode Nerd Font Mono', 'Hack Nerd Font Mono', Consolas, monospace",
+
+    // --- "Neovim" integrated-terminal profile: launches the real Neovim TUI in the CWD ---
+    // Bound to Ctrl+Alt+N (editor tab) / Ctrl+Alt+Shift+N (panel) in keybindings.jsonc.
+    "terminal.integrated.profiles.windows": {
+        "Neovim": {
+            "path": "C:\\Program Files\\Neovim\\bin\\nvim.exe",
+            "args": ["."],
+            "icon": "star"
+        }
+    },
+
+    // --- Vim-like editor feel ---
+    "editor.cursorStyle": "block",
+    "editor.minimap.enabled": false
+}

@@ -90,6 +90,15 @@ require('core.options')
 require('core.keymaps')
 require('core.autocmds')
 
+-- When running embedded inside VS Code (vscode-neovim), skip lazy.nvim and all
+-- the UI/LSP plugins -- VS Code provides those. Instead load the VS Code
+-- integration layer, which re-maps the same leader keybindings onto VS Code
+-- commands, then stop here.
+if vim.g.vscode then
+  require('core.vscode')
+  return
+end
+
 -- Bootstrap lazy.nvim package manager
 local lazypath = vim.fn.stdpath('data') .. '/lazy/lazy.nvim'
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
@@ -122,9 +131,9 @@ require('lazy').setup('plugins', {
 })
 
 -- Kernel development specific settings
-vim.opt.tabstop = 4       -- Kernel style uses 8 space tabs
-vim.opt.shiftwidth = 4    -- Use 8 spaces for indentation
-vim.opt.expandtab = false -- Use real tabs, not spaces
+vim.opt.tabstop = 4       -- Number of spaces for a tab
+vim.opt.shiftwidth = 4    -- Number of spaces for each indentation
+vim.opt.expandtab = true  -- Use spaces instead of tabs (personal preference)
 vim.opt.textwidth = 80    -- Linux kernel style
 
 -- Show buffers only in the current tab

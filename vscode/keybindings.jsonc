@@ -1,0 +1,424 @@
+[
+    // ============================================================
+    // CLOSE / WINDOWS
+    // ============================================================
+
+    // Do NOT let Ctrl+Shift+W close the whole VS Code window.
+    {
+        "key": "ctrl+shift+w",
+        "command": "-workbench.action.closeWindow"
+    },
+
+    // Ctrl+Shift+W = close current editor/tab.
+    // Leaves Ctrl+W available for Vim window commands.
+    {
+        "key": "ctrl+shift+w",
+        "command": "workbench.action.closeActiveEditor"
+    },
+
+    // Leave Ctrl+W to Vim.
+    {
+        "key": "ctrl+w",
+        "command": "-workbench.action.closeActiveEditor"
+    },
+
+    // Reopen last closed editor.
+    {
+        "key": "ctrl+shift+t",
+        "command": "workbench.action.reopenClosedEditor"
+    },
+
+
+    // ============================================================
+    // MAIN VS CODE UI
+    // ============================================================
+
+    // Sidebar.
+    // Leave Ctrl+B available for Vim.
+    {
+        "key": "ctrl+shift+b",
+        "command": "workbench.action.toggleSidebarVisibility"
+    },
+    {
+        "key": "ctrl+b",
+        "command": "-workbench.action.toggleSidebarVisibility"
+    },
+
+    // Integrated terminal.
+    {
+        "key": "ctrl+`",
+        "command": "workbench.action.terminal.toggleTerminal"
+    },
+
+    // Problems.
+    {
+        "key": "ctrl+shift+m",
+        "command": "workbench.actions.view.problems"
+    },
+
+    // Output.
+    {
+        "key": "ctrl+shift+u",
+        "command": "workbench.action.output.toggleOutput"
+    },
+
+
+    // ============================================================
+    // IMPORTANT: EDITOR LAYOUT
+    // ============================================================
+
+    // MAXIMIZE CURRENT EDITOR GROUP
+    //
+    // This is the one you wanted.
+    // Avoids Vim interfering with Ctrl+K Ctrl+M.
+    {
+        "key": "ctrl+alt+m",
+        "command": "workbench.action.toggleMaximizeEditorGroup"
+    },
+
+    // Zen mode.
+    // Avoids Ctrl+K Z.
+    {
+        "key": "ctrl+alt+z",
+        "command": "workbench.action.toggleZenMode"
+    },
+
+    // Full screen.
+    {
+        "key": "f11",
+        "command": "workbench.action.toggleFullScreen"
+    },
+
+    // Split editor.
+    {
+        "key": "ctrl+alt+\\",
+        "command": "workbench.action.splitEditor"
+    },
+
+    // Focus editor groups.
+    {
+        "key": "ctrl+alt+1",
+        "command": "workbench.action.focusFirstEditorGroup"
+    },
+    {
+        "key": "ctrl+alt+2",
+        "command": "workbench.action.focusSecondEditorGroup"
+    },
+    {
+        "key": "ctrl+alt+3",
+        "command": "workbench.action.focusThirdEditorGroup"
+    },
+
+    // Move between editor tabs.
+    {
+        "key": "ctrl+pageup",
+        "command": "workbench.action.previousEditor"
+    },
+    {
+        "key": "ctrl+pagedown",
+        "command": "workbench.action.nextEditor"
+    },
+
+
+    // ============================================================
+    // NAVIGATION
+    // ============================================================
+
+    // Quick Open: files.
+    {
+        "key": "ctrl+p",
+        "command": "workbench.action.quickOpen"
+    },
+
+    // Command Palette.
+    {
+        "key": "ctrl+shift+p",
+        "command": "workbench.action.showCommands"
+    },
+
+    // Go to line.
+    {
+        "key": "ctrl+g",
+        "command": "workbench.action.gotoLine"
+    },
+
+    // Go to symbol in current file.
+    {
+        "key": "ctrl+shift+o",
+        "command": "workbench.action.gotoSymbol"
+    },
+
+    // Search symbols across workspace.
+    {
+        "key": "ctrl+t",
+        "command": "workbench.action.showAllSymbols"
+    },
+
+    // Back / Forward.
+    {
+        "key": "alt+left",
+        "command": "workbench.action.navigateBack"
+    },
+    {
+        "key": "alt+right",
+        "command": "workbench.action.navigateForward"
+    },
+
+
+    // ============================================================
+    // VIEWS
+    // ============================================================
+
+    // Explorer.
+    {
+        "key": "ctrl+shift+e",
+        "command": "workbench.view.explorer"
+    },
+
+    // Global Search.
+    {
+        "key": "ctrl+shift+f",
+        "command": "workbench.view.search"
+    },
+
+    // Source Control / Git.
+    {
+        "key": "ctrl+shift+g",
+        "command": "workbench.view.scm"
+    },
+
+    // Run / Debug.
+    {
+        "key": "ctrl+shift+d",
+        "command": "workbench.view.debug"
+    },
+
+    // Extensions.
+    {
+        "key": "ctrl+shift+x",
+        "command": "workbench.view.extensions"
+    },
+
+
+    // ============================================================
+    // SEARCH / REPLACE
+    // ============================================================
+
+    // Find in current file.
+    {
+        "key": "ctrl+f",
+        "command": "actions.find"
+    },
+
+    // Replace in current file.
+    {
+        "key": "ctrl+h",
+        "command": "editor.action.startFindReplaceAction"
+    },
+
+    // Replace across workspace.
+    {
+        "key": "ctrl+shift+h",
+        "command": "workbench.action.replaceInFiles"
+    },
+
+    // Your custom:
+    // Search only inside current file's directory.
+    {
+        "key": "ctrl+alt+f",
+        "command": "workbench.action.findInFiles",
+        "args": {
+            "query": "",
+            "triggerSearch": false,
+            "filesToInclude": "${fileDirname}",
+            "isRegex": false
+        }
+    },
+
+
+    // ============================================================
+    // CODE / LANGUAGE FEATURES
+    // ============================================================
+
+    // Format current document.
+    {
+        "key": "shift+alt+f",
+        "command": "editor.action.formatDocument"
+    },
+
+    // Rename symbol.
+    {
+        "key": "f2",
+        "command": "editor.action.rename"
+    },
+
+    // Go to definition.
+    {
+        "key": "f12",
+        "command": "editor.action.revealDefinition"
+    },
+
+    // Go to references.
+    {
+        "key": "shift+f12",
+        "command": "editor.action.goToReferences"
+    },
+
+    // Quick Fix.
+    {
+        "key": "ctrl+.",
+        "command": "editor.action.quickFix"
+    },
+
+    // Next error / warning.
+    {
+        "key": "f8",
+        "command": "editor.action.marker.nextInFiles"
+    },
+
+    // Previous error / warning.
+    {
+        "key": "shift+f8",
+        "command": "editor.action.marker.prevInFiles"
+    },
+
+    // Toggle word wrap.
+    {
+        "key": "alt+z",
+        "command": "editor.action.toggleWordWrap"
+    },
+
+
+    // ============================================================
+    // FILES
+    // ============================================================
+
+    {
+        "key": "ctrl+s",
+        "command": "workbench.action.files.save"
+    },
+
+    {
+        "key": "ctrl+shift+s",
+        "command": "workbench.action.files.saveAs"
+    },
+
+    {
+        "key": "ctrl+o",
+        "command": "workbench.action.files.openFile"
+    },
+
+    {
+        "key": "ctrl+n",
+        "command": "workbench.action.files.newUntitledFile"
+    },
+
+
+    // ============================================================
+    // DEBUGGING
+    // ============================================================
+
+    {
+        "key": "f5",
+        "command": "workbench.action.debug.start"
+    },
+
+    {
+        "key": "shift+f5",
+        "command": "workbench.action.debug.stop"
+    },
+
+
+    // ============================================================
+    // COPILOT / CHAT
+    // Preserve your existing custom bindings
+    // ============================================================
+
+    {
+        "key": "ctrl+alt+oem_4",
+        "command": "workbench.panel.chat.view.copilot.focus"
+    },
+
+    {
+        "key": "ctrl+alt+oem_6",
+        "command": "workbench.action.chat.hideSetup"
+    },
+    {
+        "key": "alt+a",
+        "command": "asciiflow.open"
+    },
+    {
+        "key": "ctrl+o",
+        "command": "workbench.action.navigateBack",
+        "when": "canNavigateBack"
+    },
+    {
+        "key": "alt+left",
+        "command": "-workbench.action.navigateBack",
+        "when": "canNavigateBack"
+    },
+    {
+        "key": "shift+alt+enter",
+        "command": "workbench.action.terminal.openFileLink"
+    },
+    {
+        "key": "shift+alt+enter",
+        "command": "workbench.action.terminal.openDetectedLink",
+        "when": "terminalHasBeenCreated"
+    },
+    {
+        "key": "ctrl+b ctrl+z",
+        "command": "workbench.action.toggleMaximizeEditorGroup",
+        "when": "editorPartMaximizedEditorGroup || editorPartMultipleEditorGroups"
+    },
+    {
+        "key": "ctrl+k ctrl+m",
+        "command": "-workbench.action.toggleMaximizeEditorGroup",
+        "when": "editorPartMaximizedEditorGroup || editorPartMultipleEditorGroups"
+    },
+
+
+    // ============================================================
+    // REAL NEOVIM TUI (integrated terminal)
+    // ============================================================
+
+    // Ctrl+Alt+N = open the real Neovim (full plugin UI) as a full editor-area tab.
+    {
+        "key": "ctrl+alt+n",
+        "command": "workbench.action.terminal.newWithProfile",
+        "args": {
+            "profileName": "Neovim",
+            "location": "editor"
+        }
+    },
+
+    // Ctrl+Alt+Shift+N = open the real Neovim in the bottom terminal panel instead.
+    {
+        "key": "ctrl+alt+shift+n",
+        "command": "workbench.action.terminal.newWithProfile",
+        "args": {
+            "profileName": "Neovim"
+        }
+    },
+
+
+    // ============================================================
+    // CLIPBOARD (fix Ctrl+C copy under vscode-neovim)
+    // ============================================================
+
+    // Ctrl+C copies the selection in the editor. vscode-neovim otherwise
+    // swallows Ctrl+C; guarding on editorHasSelection means that when nothing
+    // is selected, Ctrl+C still passes through to Neovim as normal.
+    {
+        "key": "ctrl+c",
+        "command": "editor.action.clipboardCopyAction",
+        "when": "editorTextFocus && editorHasSelection"
+    },
+
+    // Ctrl+C in the file explorer / lists copies the item (native VS Code).
+    {
+        "key": "ctrl+c",
+        "command": "filesExplorer.copy",
+        "when": "filesExplorerFocus && foldersViewVisible && !inputFocus"
+    }
+]
