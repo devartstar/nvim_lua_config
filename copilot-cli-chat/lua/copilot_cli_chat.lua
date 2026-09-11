@@ -183,13 +183,20 @@ end
 
 -- Append a fresh input region at the end and drop a gravity-left extmark on it
 -- so we always know where the user's next message starts, regardless of any
--- "##" markdown the model emitted above.
+-- "##" markdown the model emitted above. A virtual hint line shows how to send.
 local function new_input(buf)
   local n = vim.api.nvim_buf_line_count(buf)
   vim.api.nvim_buf_set_lines(buf, n, n, false, { "" })
   local row = vim.api.nvim_buf_line_count(buf) - 1
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  local id = vim.api.nvim_buf_set_extmark(buf, ns, row, 0, { right_gravity = false })
+  local hint = vim.b[buf].cc_readonly == 1
+      and "  [ read-only cloud session - press q to close ]"
+      or "  [ Enter = send  ·  C-j = newline  ·  q = close ]"
+  local id = vim.api.nvim_buf_set_extmark(buf, ns, row, 0, {
+    right_gravity = false,
+    virt_lines = { { { hint, "Comment" } } },
+    virt_lines_above = true,
+  })
   vim.b[buf].cc_mark = id
   local win = vim.fn.bufwinid(buf)
   if win ~= -1 then
@@ -197,10 +204,36 @@ local function new_input(buf)
   end
 end
 
+-- Submit the current input (used by all the submit keymaps).
+local function do_submit(buf)
+  vim.cmd("stopinsert")
+  vim.schedule(function() M.send(buf) end)
+end
+
 local function set_keymaps(buf)
   local o = { buffer = buf, silent = true, nowait = true }
+  -- Normal mode: Enter sends.
   vim.keymap.set("n", "<CR>", function() M.send(buf) end, o)
-  vim.keymap.set("i", "<C-s>", function() vim.cmd("stopinsert"); M.send(buf) end, o)
+  -- Insert mode: Enter sends too (natural chat UX). If the blink.cmp completion
+  -- menu is open, Enter accepts the completion instead of sending.
+  vim.keymap.set("i", "<CR>", function()
+    local ok, blink = pcall(require, "blink.cmp")
+    if ok and type(blink.is_visible) == "function" and blink.is_visible() then
+      if type(blink.accept) == "function" then blink.accept() end
+      return
+    end
+    if vim.fn.pumvisible() == 1 then
+      vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<C-y>", true, false, true), "n", false)
+      return
+    end
+    do_submit(buf)
+  end, o)
+  -- Insert mode: Ctrl-J inserts a real newline for multi-line prompts.
+  vim.keymap.set("i", "<C-j>", function()
+    vim.api.nvim_put({ "", "" }, "c", false, true)
+  end, o)
+  -- Keep Ctrl-S as an alternate submit (muscle memory).
+  vim.keymap.set("i", "<C-s>", function() do_submit(buf) end, o)
   vim.keymap.set("n", "q", function()
     local win = vim.fn.bufwinid(buf)
     if win ~= -1 then pcall(vim.api.nvim_win_close, win, false) end
@@ -354,6 +387,7 @@ function M.open(opts)
     if pos and pos[1] and win ~= -1 then
       vim.api.nvim_win_set_cursor(win, { pos[1] + 1, 0 })
     end
+    vim.cmd("startinsert")
   end
   notify_mode(buf)
 end
@@ -416,14 +450,15 @@ function M.open_session(entry)
   local existing = md_for_sid(entry.id)
   if existing then
     local buf = show(existing)
+    vim.b[buf].cc_readonly = readonly and 1 or 0
     if not vim.b[buf].cc_sid then
       init_buffer(buf, existing, (entry.dir ~= "" and entry.dir or nil), readonly and "read" or "agent")
     end
-    vim.b[buf].cc_readonly = readonly and 1 or 0
     -- one-time upgrade: chats rendered before reasoning-folds existed
     if not vim.tbl_contains(vim.api.nvim_buf_get_lines(buf, 0, 12, false), CT_VERSION) then
       M.refresh(buf)
     end
+    if not readonly then vim.cmd("startinsert") end
     notify_mode(buf)
     return
   end
@@ -472,6 +507,7 @@ function M.open_session(entry)
   set_keymaps(buf)
   apply_fold_opts(buf)
   save(buf)
+  if not readonly then vim.cmd("startinsert") end
   notify_mode(buf)
 end
 
