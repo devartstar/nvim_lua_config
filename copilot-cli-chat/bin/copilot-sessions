@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# List resumable Copilot sessions with a LOCAL/REMOTE tag.
+# Usage: copilot-sessions [filter]   # optional case-insensitive filter on title/dir
+db="${HOME}/.copilot/session-store.db"
+[ -f "$db" ] || { echo "No session store at $db" >&2; exit 1; }
+flt="$*"
+sqlite3 -readonly "$db" \
+"SELECT CASE WHEN COALESCE(host_type,'')='' THEN 'LOCAL' ELSE 'REMOTE' END||char(9)||
+        datetime(COALESCE(updated_at,created_at))||char(9)||id||char(9)||
+        REPLACE(SUBSTR(COALESCE(NULLIF(summary,''),'(untitled)'),1,58),char(10),' ')||char(9)||cwd
+ FROM sessions ORDER BY COALESCE(updated_at,created_at) DESC LIMIT 200;" 2>/dev/null | \
+awk -v flt="$flt" -F'\t' '
+  flt=="" || index(tolower($0),tolower(flt)) {
+    tag = ($1=="LOCAL") ? "\033[32m[LOCAL] \033[0m" : "\033[33m[REMOTE]\033[0m";
+    printf "%s \033[2m%s\033[0m  \033[36m%s\033[0m\n         %s\n         \033[2m%s\033[0m\n", tag,$2,$3,$4,$5
+  }'
+echo
+echo "LOCAL  = runs on your machine, resumes offline, persists across reboots"
+echo "REMOTE = GitHub-hosted; resuming prompts Remote/Local (pick Local to pull it down)"

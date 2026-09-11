@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# copilot-ask — one-shot Copilot CLI call for editor/script integration.
+# Reads the prompt from STDIN, prints only the assistant response to STDOUT.
+#
+#   echo "your question" | copilot-ask --session <uuid> [--dir <path>] [--repo]
+#
+#   --session <id>  Pin a stable session id so conversation memory persists
+#                   across calls (and stays resumable via `copilot --resume`).
+#   --dir <path>    Run with this working directory as context.
+#   --repo          Allow READ-ONLY repo access (view+glob). Never edits,
+#                   never runs shell.
+#   --agent         Full agent: read, EDIT files, and RUN shell commands
+#                   automatically (--allow-all-tools). Powerful — use in repos
+#                   you trust it to modify.
+#
+# Installed by the Copilot setup helper — safe to edit or delete.
+set -euo pipefail
+
+# Resolve the Copilot CLI: prefer a co-located 'copilot' launcher, then PATH,
+# then the newest build cached by the GitHub Copilot app. Keeps this portable
+# across machines (the plugin bundles this script under its own bin/).
+_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+resolve_copilot() {
+  if [ -x "${_dir}/copilot" ]; then echo "${_dir}/copilot"; return; fi
+  if command -v copilot >/dev/null 2>&1; then command -v copilot; return; fi
+  local root="${HOME}/.cache/github-copilot-sdk/cli" latest
+  latest="$(ls -1 "$root" 2>/dev/null | sort -V | tail -n1)"
+  [ -n "$latest" ] && echo "${root}/${latest}/copilot"
+}
+LAUNCHER="$(resolve_copilot)"
+if [ -z "$LAUNCHER" ] || [ ! -x "$LAUNCHER" ]; then
+  echo "copilot-ask: could not find the Copilot CLI" >&2
+  exit 127
+fi
+sid=""; dir=""; repo=0; agent=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --session) sid="${2:-}"; shift 2 ;;
+    --dir)     dir="${2:-}"; shift 2 ;;
+    --repo)    repo=1; shift ;;
+    --agent)   agent=1; shift ;;
+    --)        shift; break ;;
+    *)         shift ;;
+  esac
+done
+
+prompt="$(cat)"
+if [ -z "${prompt//[$'\t\r\n ']/}" ]; then
+  echo "(empty prompt)" >&2
+  exit 2
+fi
+
+args=( -p "$prompt" -s --no-color )
+[ -n "$sid" ] && args+=( --session-id "$sid" )
+[ -n "$dir" ] && args+=( -C "$dir" )
+if [ "$agent" -eq 1 ]; then
+  # Full agent: can read, edit files, and run shell commands.
+  args+=( --allow-all-tools )
+elif [ "$repo" -eq 1 ]; then
+  # Read-only: can inspect files, cannot modify anything or run shell.
+  args+=( --allow-tool 'view' --allow-tool 'glob' )
+fi
+
+exec "$LAUNCHER" "${args[@]}"

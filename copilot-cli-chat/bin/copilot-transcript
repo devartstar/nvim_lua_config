@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+# copilot-transcript — reconstruct a readable Markdown transcript from a
+# Copilot CLI session's event log.
+#
+#   copilot-transcript <session-id | path/to/events.jsonl>
+#
+# Prints "## You" / "## Copilot" blocks to stdout. Read-only.
+# Installed by the Copilot setup helper — safe to edit or delete.
+import sys, os, json
+
+
+def events_path(arg):
+    if os.path.isfile(arg):
+        return arg
+    return os.path.expanduser(f"~/.copilot/session-state/{arg}/events.jsonl")
+
+
+def fold(reasons):
+    """Wrap reasoning text in fold-marker comments so Neovim can collapse it."""
+    text = "\n\n".join(reasons).strip()
+    return (
+        "<!--ct:think-->\n"
+        "_Copilot's reasoning:_\n\n"
+        + text
+        + "\n<!--ct:/think-->\n\n"
+    )
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: copilot-transcript <session-id|events.jsonl>", file=sys.stderr)
+        sys.exit(2)
+    path = events_path(sys.argv[1])
+    if not os.path.isfile(path):
+        print("_No local transcript found for this session._")
+        return
+
+    blocks = []
+    pending = []  # reasoning accumulated for the current answer
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    o = json.loads(line)
+                except Exception:
+                    continue
+                t = o.get("type")
+                d = o.get("data") or {}
+                if not isinstance(d, dict):
+                    continue
+                if t == "user.message":
+                    c = (d.get("content") or "").strip()
+                    if c:
+                        blocks.append("## You\n\n" + c)
+                elif t == "assistant.message":
+                    rt = (d.get("reasoningText") or "").strip()
+                    if rt:
+                        pending.append(rt)
+                    c = (d.get("content") or "").strip()
+                    if c:
+                        block = "## Copilot\n\n"
+                        if pending:
+                            block += fold(pending)
+                        block += c
+                        blocks.append(block)
+                        pending = []
+    except OSError as e:
+        print(f"_Could not read transcript: {e}_")
+        return
+
+    if not blocks:
+        print("_This session has no readable messages yet._")
+        return
+    print("\n\n---\n\n".join(blocks))
+
+
+if __name__ == "__main__":
+    main()
