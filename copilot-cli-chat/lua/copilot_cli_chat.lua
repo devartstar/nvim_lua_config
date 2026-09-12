@@ -171,8 +171,11 @@ local function save(buf)
 end
 
 local function notify_mode(buf)
-  if vim.b[buf].cc_readonly == 1 then
-    vim.notify("Copilot [read-only - cloud session]  ·  q hide", vim.log.levels.INFO)
+  if vim.b[buf].cc_cloud == 1 then
+    vim.notify(
+      "Copilot [cloud session - continues LOCALLY]  ·  <Enter> send · q hide",
+      vim.log.levels.INFO
+    )
     return
   end
   vim.notify(
@@ -189,8 +192,8 @@ local function new_input(buf)
   vim.api.nvim_buf_set_lines(buf, n, n, false, { "" })
   local row = vim.api.nvim_buf_line_count(buf) - 1
   vim.api.nvim_buf_clear_namespace(buf, ns, 0, -1)
-  local hint = vim.b[buf].cc_readonly == 1
-      and "  [ read-only cloud session - press q to close ]"
+  local hint = vim.b[buf].cc_cloud == 1
+      and "  [ cloud session - typing continues it LOCALLY  ·  Enter = send  ·  q = close ]"
       or "  [ Enter = send  ·  C-j = newline  ·  q = close ]"
   local id = vim.api.nvim_buf_set_extmark(buf, ns, row, 0, {
     right_gravity = false,
@@ -289,13 +292,6 @@ function M.send(buf)
   buf = buf or vim.api.nvim_get_current_buf()
   if not vim.b[buf].cc_sid then
     vim.notify("Not a Copilot chat buffer", vim.log.levels.WARN)
-    return
-  end
-  if vim.b[buf].cc_readonly == 1 then
-    vim.notify(
-      "Read-only cloud session. Continue it in the GitHub Copilot app, or in a terminal:\n  copilot --resume=" .. (vim.b[buf].cc_sid or ""),
-      vim.log.levels.WARN
-    )
     return
   end
   if vim.b[buf].cc_busy == 1 then
@@ -443,22 +439,23 @@ end
 
 -- Open a specific store session in a buffer, rendering its past transcript the
 -- first time (so existing CLI/app chats are readable), then continue it.
+-- Cloud-origin sessions are labelled but still continuable (locally).
 function M.open_session(entry)
   vim.fn.mkdir(CHAT_DIR, "p")
-  local readonly = entry.remote
-  if readonly == nil then readonly = is_remote(entry.id) end
+  local cloud = entry.remote
+  if cloud == nil then cloud = is_remote(entry.id) end
   local existing = md_for_sid(entry.id)
   if existing then
     local buf = show(existing)
-    vim.b[buf].cc_readonly = readonly and 1 or 0
+    vim.b[buf].cc_cloud = cloud and 1 or 0
     if not vim.b[buf].cc_sid then
-      init_buffer(buf, existing, (entry.dir ~= "" and entry.dir or nil), readonly and "read" or "agent")
+      init_buffer(buf, existing, (entry.dir ~= "" and entry.dir or nil), "agent")
     end
     -- one-time upgrade: chats rendered before reasoning-folds existed
     if not vim.tbl_contains(vim.api.nvim_buf_get_lines(buf, 0, 12, false), CT_VERSION) then
       M.refresh(buf)
     end
-    if not readonly then vim.cmd("startinsert") end
+    vim.cmd("startinsert")
     notify_mode(buf)
     return
   end
@@ -476,15 +473,14 @@ function M.open_session(entry)
   local content = {
     "# Copilot chat - " .. entry.title,
     "",
-    "> session `" .. entry.id .. "` (" .. (readonly and "cloud" or "local") .. ")",
+    "> session `" .. entry.id .. "` (" .. (cloud and "cloud" or "local") .. ")",
   }
-  if readonly then
-    content[#content + 1] =
-      "> read-only here (cloud session) - continue in the app or run `copilot --resume=" .. entry.id .. "`"
+  if cloud then
+    content[#content + 1] = "> cloud session - typing here continues it LOCALLY (new turns are local)"
   else
     content[#content + 1] = "> mode: " .. (MODE_LABEL.agent)
-    content[#content + 1] = "> resume in terminal: `copilot --resume=" .. entry.id .. "`"
   end
+  content[#content + 1] = "> resume in terminal: `copilot --resume=" .. entry.id .. "`"
   content[#content + 1] = CT_VERSION
   vim.list_extend(content, { "", "---", "" })
 
@@ -497,37 +493,106 @@ function M.open_session(entry)
 
   vim.b[buf].cc_sid = entry.id
   vim.b[buf].cc_dir = dir
-  vim.b[buf].cc_mode = readonly and "read" or "agent"
-  vim.b[buf].cc_readonly = readonly and 1 or 0
+  vim.b[buf].cc_mode = "agent"
+  vim.b[buf].cc_cloud = cloud and 1 or 0
   vim.b[buf].cc_busy = 0
   vim.b[buf].cc_is_chat = 1
-  if not readonly then
-    new_input(buf)
-  end
+  new_input(buf)
   set_keymaps(buf)
   apply_fold_opts(buf)
   save(buf)
-  if not readonly then vim.cmd("startinsert") end
+  vim.cmd("startinsert")
   notify_mode(buf)
 end
 
--- Pick and switch between ALL Copilot sessions (CLI, app, and nvim chats).
-function M.sessions()
-  local items = store_sessions()
-  if #items == 0 then
-    vim.notify("No Copilot sessions found", vim.log.levels.INFO)
+-- Lay down a fresh, empty chat in `buf` bound to (sid, dir), ready to type.
+local function fresh_chat(buf, sid, dir, mode)
+  vim.bo[buf].filetype = "markdown"
+  vim.bo[buf].bufhidden = "hide"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
+    "# Copilot chat - " .. (dir ~= "" and vim.fn.fnamemodify(dir, ":t") or "chat"),
+    "",
+    "> session `" .. sid .. "` (local, new)",
+    "> mode: " .. (MODE_LABEL[mode] or mode),
+    "> resume in terminal: `copilot --resume=" .. sid .. "`",
+    CT_VERSION,
+    "",
+    "---",
+    "",
+  })
+  vim.b[buf].cc_sid = sid
+  vim.b[buf].cc_dir = dir
+  vim.b[buf].cc_mode = mode
+  vim.b[buf].cc_cloud = 0
+  vim.b[buf].cc_busy = 0
+  vim.b[buf].cc_is_chat = 1
+  new_input(buf)
+  set_keymaps(buf)
+  apply_fold_opts(buf)
+  save(buf)
+end
+
+-- Rebind `buf` (whose file is `file`) to a chosen session and reload it in
+-- place. `entry.id == "__new__"` starts a brand-new session for the project.
+local function bind_and_load(buf, file, entry)
+  if entry.id == "__new__" then
+    local dir = read_line(file .. ".dir") or vim.b[buf].cc_dir or project_root()
+    local sid = uuid()
+    write_line(file .. ".sid", sid)
+    write_line(file .. ".dir", dir)
+    fresh_chat(buf, sid, dir, "agent")
+    vim.cmd("startinsert")
+    vim.notify("Started a new session for this chat", vim.log.levels.INFO)
     return
   end
-  vim.ui.select(items, {
-    prompt = "Copilot sessions (local / cloud)",
+  local cloud = entry.remote
+  if cloud == nil then cloud = is_remote(entry.id) end
+  local dir = (entry.dir ~= "" and entry.dir) or read_line(file .. ".dir") or project_root()
+  write_line(file .. ".sid", entry.id)
+  write_line(file .. ".dir", dir)
+  vim.b[buf].cc_sid = entry.id
+  vim.b[buf].cc_dir = dir
+  vim.b[buf].cc_cloud = cloud and 1 or 0
+  vim.b[buf].cc_mode = "agent"
+  vim.b[buf].cc_is_chat = 1
+  set_keymaps(buf)
+  M.refresh(buf)
+  vim.cmd("startinsert")
+  notify_mode(buf)
+end
+
+-- Switch the CURRENT chat panel to a different session (or a brand-new one),
+-- rebinding this project's chat file and reloading in place. This is how you
+-- change which session <leader>ai continues.
+function M.switch()
+  local buf = vim.api.nvim_get_current_buf()
+  if vim.b[buf].cc_is_chat ~= 1 then
+    M.open({ mode = "agent" })
+    buf = vim.api.nvim_get_current_buf()
+  end
+  local file = vim.api.nvim_buf_get_name(buf)
+  local cur = vim.b[buf].cc_sid
+
+  local list = { { id = "__new__", title = "+ New session (fresh)", dir = "", ts = "", remote = false } }
+  vim.list_extend(list, store_sessions())
+
+  vim.ui.select(list, {
+    prompt = "Switch this chat to session:",
     format_item = function(e)
+      if e.id == "__new__" then return e.title end
       local tag = e.remote and "[cloud]" or "[local]"
       local dirb = e.dir ~= "" and vim.fn.fnamemodify(e.dir, ":t") or "-"
-      return string.format("%-7s %s  ·  %s  ·  %s", tag, e.title, dirb, e.ts)
+      local mark = (e.id == cur) and "  <- current" or ""
+      return string.format("%-7s %s  ·  %s  ·  %s%s", tag, e.title, dirb, e.ts, mark)
     end,
   }, function(choice)
-    if choice then M.open_session(choice) end
+    if choice then bind_and_load(buf, file, choice) end
   end)
+end
+
+-- Backwards-compatible alias.
+function M.sessions()
+  M.switch()
 end
 
 -- Rebuild the current chat buffer from the session's event log, so existing
@@ -539,7 +604,7 @@ function M.refresh(buf)
     vim.notify("Not a Copilot chat buffer", vim.log.levels.WARN)
     return
   end
-  local readonly = vim.b[buf].cc_readonly == 1
+  local cloud = vim.b[buf].cc_cloud == 1
 
   -- preserve any unsent draft in the current input region
   local draft = {}
@@ -555,13 +620,14 @@ function M.refresh(buf)
   local content = {
     "# Copilot chat - " .. name,
     "",
-    "> session `" .. sid .. "` (" .. (readonly and "cloud" or "local") .. ")",
-    "> resume in terminal: `copilot --resume=" .. sid .. "`",
-    CT_VERSION,
-    "",
-    "---",
-    "",
+    "> session `" .. sid .. "` (" .. (cloud and "cloud" or "local") .. ")",
   }
+  if cloud then
+    content[#content + 1] = "> cloud session - typing here continues it LOCALLY (new turns are local)"
+  end
+  content[#content + 1] = "> resume in terminal: `copilot --resume=" .. sid .. "`"
+  content[#content + 1] = CT_VERSION
+  vim.list_extend(content, { "", "---", "" })
   local transcript = vim.fn.systemlist({ TRANSCRIPT, sid })
   if vim.v.shell_error ~= 0 or #transcript == 0 then
     transcript = { "_Could not load this session's transcript._" }
@@ -569,13 +635,11 @@ function M.refresh(buf)
   vim.list_extend(content, transcript)
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, content)
 
-  if not readonly then
-    new_input(buf)
-    if #draft > 0 then
-      local pos = vim.api.nvim_buf_get_extmark_by_id(buf, ns, vim.b[buf].cc_mark, {})
-      if pos and pos[1] then
-        vim.api.nvim_buf_set_lines(buf, pos[1], -1, false, draft)
-      end
+  new_input(buf)
+  if #draft > 0 then
+    local pos = vim.api.nvim_buf_get_extmark_by_id(buf, ns, vim.b[buf].cc_mark, {})
+    if pos and pos[1] then
+      vim.api.nvim_buf_set_lines(buf, pos[1], -1, false, draft)
     end
   end
   apply_fold_opts(buf)
@@ -602,8 +666,10 @@ function M.setup()
   })
   vim.api.nvim_create_user_command("CopilotCliSend", function() M.send() end,
     { desc = "Send the current Copilot CLI chat input" })
-  vim.api.nvim_create_user_command("CopilotCliSessions", function() M.sessions() end,
-    { desc = "Switch Copilot CLI chat session" })
+  vim.api.nvim_create_user_command("CopilotCliSessions", function() M.switch() end,
+    { desc = "Switch Copilot CLI chat session (in place)" })
+  vim.api.nvim_create_user_command("CopilotCliSwitch", function() M.switch() end,
+    { desc = "Switch this chat to another session (or start a new one)" })
   vim.api.nvim_create_user_command("CopilotCliRefresh", function() M.refresh() end,
     { desc = "Rebuild this chat from its event log (adds reasoning folds)" })
 
@@ -619,8 +685,8 @@ function M.setup()
 
   vim.keymap.set("n", "<leader>ai", function() M.toggle({ mode = "agent" }) end,
     { desc = "Copilot CLI: toggle agent chat" })
-  vim.keymap.set("n", "<leader>as", function() M.sessions() end,
-    { desc = "Copilot CLI: switch session" })
+  vim.keymap.set("n", "<leader>as", function() M.switch() end,
+    { desc = "Copilot CLI: switch session (in place / new)" })
 end
 
 return M
