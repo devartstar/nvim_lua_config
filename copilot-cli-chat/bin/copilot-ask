@@ -32,12 +32,13 @@ if [ -z "$LAUNCHER" ] || [ ! -x "$LAUNCHER" ]; then
   echo "copilot-ask: could not find the Copilot CLI" >&2
   exit 127
 fi
-sid=""; dir=""; repo=0; agent=0
+sid=""; dir=""; repo=0; agent=0; model=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --session) sid="${2:-}"; shift 2 ;;
     --dir)     dir="${2:-}"; shift 2 ;;
+    --model)   model="${2:-}"; shift 2 ;;
     --repo)    repo=1; shift ;;
     --agent)   agent=1; shift ;;
     --)        shift; break ;;
@@ -54,6 +55,7 @@ fi
 args=( -p "$prompt" -s --no-color )
 [ -n "$sid" ] && args+=( --session-id "$sid" )
 [ -n "$dir" ] && args+=( -C "$dir" )
+[ -n "$model" ] && args+=( --model "$model" )
 if [ "$agent" -eq 1 ]; then
   # Full agent: can read, edit files, and run shell commands.
   args+=( --allow-all-tools )

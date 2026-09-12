@@ -41,6 +41,67 @@ local TRANSCRIPT = bin("copilot-transcript")
 local THOUGHTS = bin("copilot-thoughts")
 local CHAT_DIR = vim.fn.expand("~/.copilot-cli/chats")
 
+-- Model used for chats. Default to Claude Opus 4.8 (highest quality, matches
+-- the model your older app sessions used). Change per-chat with :CopilotCliModel
+-- or <leader>am; override the global default by setting vim.g.copilot_cli_model.
+local DEFAULT_MODEL = "claude-opus-4.8"
+-- Curated pick list (freeform also allowed). 'auto' lets Copilot choose.
+local MODELS = {
+  "claude-opus-4.8",
+  "claude-sonnet-5",
+  "claude-haiku-4.5",
+  "claude-opus-4.7",
+  "gpt-5.4",
+  "gpt-5.3-codex",
+  "auto",
+}
+
+local function default_model()
+  return vim.g.copilot_cli_model or DEFAULT_MODEL
+end
+
+-- Humanize a token count: 1863866 -> "1.9M", 15982 -> "16k".
+local function humanize(n)
+  n = tonumber(n) or 0
+  if n >= 1e6 then return string.format("%.1fM", n / 1e6) end
+  if n >= 1e3 then return string.format("%.0fk", n / 1e3) end
+  return tostring(n)
+end
+
+-- Cumulative token usage for a session from the local usage table.
+local function usage_stats(sid)
+  if not sid then return nil end
+  local db = vim.fn.expand("~/.copilot/session-store.db")
+  if vim.fn.filereadable(db) == 0 then return nil end
+  local sql = ([[SELECT COALESCE(SUM(input_tokens),0) inp, COALESCE(SUM(output_tokens),0) outp,
+      COUNT(DISTINCT turn_index) turns
+      FROM assistant_usage_events WHERE session_id='%s';]]):format(sid:gsub("'", ""))
+  local out = vim.fn.system({ "sqlite3", "-readonly", "-json", db, sql })
+  if vim.v.shell_error ~= 0 or out == "" then return nil end
+  local ok, arr = pcall(vim.json.decode, out)
+  if not ok or not arr or not arr[1] then return nil end
+  return arr[1]
+end
+
+-- Set the per-window winbar to: model + working dir + token usage.
+local function set_winbar(buf)
+  local win = vim.fn.bufwinid(buf)
+  if win == -1 then return end
+  local model = vim.b[buf].cc_model or default_model()
+  local tag = vim.b[buf].cc_cloud == 1 and "cloud" or "local"
+  local parts = { "%#Title#  Copilot%*  ", model, "  %#Comment#[", tag, "]%*" }
+  local dir = vim.b[buf].cc_dir
+  if dir and dir ~= "" then
+    parts[#parts + 1] = "  %#Directory#" .. vim.fn.fnamemodify(dir, ":~") .. "%*"
+  end
+  local u = usage_stats(vim.b[buf].cc_sid)
+  if u then
+    parts[#parts + 1] = string.format("  %%#Comment#· up %s down %s · %d turns%%*",
+      humanize(u.inp), humanize(u.outp), u.turns or 0)
+  end
+  vim.wo[win].winbar = table.concat(parts)
+end
+
 -- Fold reasoning ("thoughts") blocks. Markers are HTML comments with no spaces
 -- so they are valid 'foldmarker' values and stay invisible in rendered markdown.
 local FOLD_OPEN = "<!--ct:think-->"
@@ -131,6 +192,11 @@ end
 
 local function project_root()
   local cwd = vim.fn.getcwd()
+  -- Guard: if nvim's cwd is inside the chat store (rare), use the global cwd so
+  -- we resolve the user's real project, not ~/.copilot-cli/chats.
+  if cwd:sub(1, #CHAT_DIR) == CHAT_DIR then
+    cwd = vim.fn.getcwd(-1, -1)
+  end
   local out = vim.fn.systemlist({ "git", "-C", cwd, "rev-parse", "--show-toplevel" })
   if vim.v.shell_error == 0 and out[1] and out[1] ~= "" then
     return out[1]
@@ -147,6 +213,17 @@ end
 
 local function chat_file_for(root)
   return CHAT_DIR .. "/" .. slugify(root) .. ".md"
+end
+
+-- Resolve the model pinned for a chat file (persisted in a .model sidecar),
+-- defaulting to the global default and backfilling the sidecar.
+local function resolve_model(file)
+  local m = read_line(file .. ".model")
+  if not m or m == "" then
+    m = default_model()
+    write_line(file .. ".model", m)
+  end
+  return m
 end
 
 -- Resolve (sid, dir) for a chat file, creating/backfilling sidecars.
@@ -267,11 +344,13 @@ local function init_buffer(buf, file, root, mode)
   vim.b[buf].cc_sid = sid
   vim.b[buf].cc_dir = dir
   vim.b[buf].cc_mode = mode
+  vim.b[buf].cc_model = resolve_model(file)
   vim.b[buf].cc_busy = 0
   vim.b[buf].cc_is_chat = 1
   new_input(buf)
   set_keymaps(buf)
   apply_fold_opts(buf)
+  set_winbar(buf)
 end
 
 -- Show a chat file in a right-hand split (focus it if already visible).
@@ -323,6 +402,11 @@ function M.send(buf)
   save(buf)
 
   local args = { ASK, "--session", vim.b[buf].cc_sid, "--dir", vim.b[buf].cc_dir }
+  local model = vim.b[buf].cc_model or default_model()
+  if model ~= "" then
+    args[#args + 1] = "--model"
+    args[#args + 1] = model
+  end
   local mode = vim.b[buf].cc_mode or "agent"
   if mode == "read" then
     args[#args + 1] = "--repo"
@@ -355,6 +439,7 @@ function M.send(buf)
       vim.api.nvim_buf_set_lines(buf, n, n, false, { "", "---", "" })
       new_input(buf)
       apply_fold_opts(buf)
+      set_winbar(buf)
       save(buf)
     end)
   end)
@@ -449,12 +534,14 @@ function M.open_session(entry)
     local buf = show(existing)
     vim.b[buf].cc_cloud = cloud and 1 or 0
     if not vim.b[buf].cc_sid then
-      init_buffer(buf, existing, (entry.dir ~= "" and entry.dir or nil), "agent")
+      init_buffer(buf, existing, project_root(), "agent")
     end
+    vim.b[buf].cc_model = vim.b[buf].cc_model or resolve_model(existing)
     -- one-time upgrade: chats rendered before reasoning-folds existed
     if not vim.tbl_contains(vim.api.nvim_buf_get_lines(buf, 0, 12, false), CT_VERSION) then
       M.refresh(buf)
     end
+    set_winbar(buf)
     vim.cmd("startinsert")
     notify_mode(buf)
     return
@@ -462,7 +549,10 @@ function M.open_session(entry)
 
   local base = slugify(entry.title ~= "" and entry.title or entry.id):sub(1, 40)
   local file = CHAT_DIR .. "/" .. base .. "-" .. entry.id:sub(1, 8) .. ".md"
-  local dir = (entry.dir ~= "" and entry.dir) or vim.fn.getcwd()
+  -- Working dir = the project you have open in nvim NOW, not the session's
+  -- original (possibly stale worktree) cwd. This is where you can edit/verify
+  -- code, so the agent must operate there and can read uncommitted changes.
+  local dir = project_root()
   write_line(file .. ".sid", entry.id)
   write_line(file .. ".dir", dir)
 
@@ -494,19 +584,21 @@ function M.open_session(entry)
   vim.b[buf].cc_sid = entry.id
   vim.b[buf].cc_dir = dir
   vim.b[buf].cc_mode = "agent"
+  vim.b[buf].cc_model = resolve_model(file)
   vim.b[buf].cc_cloud = cloud and 1 or 0
   vim.b[buf].cc_busy = 0
   vim.b[buf].cc_is_chat = 1
   new_input(buf)
   set_keymaps(buf)
   apply_fold_opts(buf)
+  set_winbar(buf)
   save(buf)
   vim.cmd("startinsert")
   notify_mode(buf)
 end
 
 -- Lay down a fresh, empty chat in `buf` bound to (sid, dir), ready to type.
-local function fresh_chat(buf, sid, dir, mode)
+local function fresh_chat(buf, sid, dir, mode, model)
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "hide"
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
@@ -523,37 +615,42 @@ local function fresh_chat(buf, sid, dir, mode)
   vim.b[buf].cc_sid = sid
   vim.b[buf].cc_dir = dir
   vim.b[buf].cc_mode = mode
+  vim.b[buf].cc_model = model or default_model()
   vim.b[buf].cc_cloud = 0
   vim.b[buf].cc_busy = 0
   vim.b[buf].cc_is_chat = 1
   new_input(buf)
   set_keymaps(buf)
   apply_fold_opts(buf)
+  set_winbar(buf)
   save(buf)
 end
 
 -- Rebind `buf` (whose file is `file`) to a chosen session and reload it in
 -- place. `entry.id == "__new__"` starts a brand-new session for the project.
+-- The working dir always tracks the project you have open in nvim now, so
+-- switching to an old session never drags along its stale worktree cwd.
 local function bind_and_load(buf, file, entry)
+  local model = resolve_model(file)
+  local dir = project_root()
   if entry.id == "__new__" then
-    local dir = read_line(file .. ".dir") or vim.b[buf].cc_dir or project_root()
     local sid = uuid()
     write_line(file .. ".sid", sid)
     write_line(file .. ".dir", dir)
-    fresh_chat(buf, sid, dir, "agent")
+    fresh_chat(buf, sid, dir, "agent", model)
     vim.cmd("startinsert")
-    vim.notify("Started a new session for this chat", vim.log.levels.INFO)
+    vim.notify("Started a new session for this chat (dir: " .. dir .. ")", vim.log.levels.INFO)
     return
   end
   local cloud = entry.remote
   if cloud == nil then cloud = is_remote(entry.id) end
-  local dir = (entry.dir ~= "" and entry.dir) or read_line(file .. ".dir") or project_root()
   write_line(file .. ".sid", entry.id)
   write_line(file .. ".dir", dir)
   vim.b[buf].cc_sid = entry.id
   vim.b[buf].cc_dir = dir
   vim.b[buf].cc_cloud = cloud and 1 or 0
   vim.b[buf].cc_mode = "agent"
+  vim.b[buf].cc_model = model
   vim.b[buf].cc_is_chat = 1
   set_keymaps(buf)
   M.refresh(buf)
@@ -643,12 +740,61 @@ function M.refresh(buf)
     end
   end
   apply_fold_opts(buf)
+  set_winbar(buf)
   save(buf)
   local thoughts = 0
   for _, l in ipairs(transcript) do
     if l == FOLD_OPEN then thoughts = thoughts + 1 end
   end
   vim.notify("Refreshed (" .. #transcript .. " lines, " .. thoughts .. " reasoning blocks)", vim.log.levels.INFO)
+end
+
+-- Set the model for the current chat (persisted per-chat). No arg -> picker.
+function M.set_model(model)
+  local buf = vim.api.nvim_get_current_buf()
+  if vim.b[buf].cc_is_chat ~= 1 then
+    vim.notify("Open a Copilot chat first (<leader>ai)", vim.log.levels.WARN)
+    return
+  end
+  local function apply(m)
+    if not m or m == "" then return end
+    vim.b[buf].cc_model = m
+    write_line(vim.api.nvim_buf_get_name(buf) .. ".model", m)
+    set_winbar(buf)
+    vim.notify("Model for this chat set to: " .. m, vim.log.levels.INFO)
+  end
+  if model and model ~= "" then
+    apply(model)
+    return
+  end
+  vim.ui.select(MODELS, {
+    prompt = "Model for this chat (current: " .. (vim.b[buf].cc_model or default_model()) .. ")",
+  }, function(choice) apply(choice) end)
+end
+
+-- Set the working directory the agent operates in for the current chat
+-- (persisted per-chat). No arg -> the project you have open in nvim now.
+-- This is what lets the agent read your uncommitted/unstaged code.
+function M.set_dir(path)
+  local buf = vim.api.nvim_get_current_buf()
+  if vim.b[buf].cc_is_chat ~= 1 then
+    vim.notify("Open a Copilot chat first (<leader>ai)", vim.log.levels.WARN)
+    return
+  end
+  local dir
+  if path and path ~= "" then
+    dir = vim.fn.fnamemodify(vim.fn.expand(path), ":p"):gsub("/$", "")
+  else
+    dir = project_root()
+  end
+  if vim.fn.isdirectory(dir) ~= 1 then
+    vim.notify("Not a directory: " .. dir, vim.log.levels.ERROR)
+    return
+  end
+  vim.b[buf].cc_dir = dir
+  write_line(vim.api.nvim_buf_get_name(buf) .. ".dir", dir)
+  set_winbar(buf)
+  vim.notify("Agent working dir for this chat: " .. dir, vim.log.levels.INFO)
 end
 
 function M.setup()
@@ -672,13 +818,24 @@ function M.setup()
     { desc = "Switch this chat to another session (or start a new one)" })
   vim.api.nvim_create_user_command("CopilotCliRefresh", function() M.refresh() end,
     { desc = "Rebuild this chat from its event log (adds reasoning folds)" })
+  vim.api.nvim_create_user_command("CopilotCliModel", function(a) M.set_model(a.args) end, {
+    nargs = "?",
+    complete = function() return MODELS end,
+    desc = "Set the model for this Copilot chat",
+  })
+  vim.api.nvim_create_user_command("CopilotCliDir", function(a) M.set_dir(a.args) end, {
+    nargs = "?",
+    complete = "dir",
+    desc = "Set the agent working dir for this chat (default: current project)",
+  })
 
-  -- Re-apply fold settings whenever a chat buffer is shown in a window.
+  -- Re-apply fold + winbar whenever a chat buffer is shown in a window.
   vim.api.nvim_create_autocmd("BufWinEnter", {
     group = vim.api.nvim_create_augroup("CopilotCliChat", { clear = true }),
     callback = function(a)
       if vim.b[a.buf] and vim.b[a.buf].cc_is_chat == 1 then
         apply_fold_opts(a.buf)
+        set_winbar(a.buf)
       end
     end,
   })
@@ -687,6 +844,10 @@ function M.setup()
     { desc = "Copilot CLI: toggle agent chat" })
   vim.keymap.set("n", "<leader>as", function() M.switch() end,
     { desc = "Copilot CLI: switch session (in place / new)" })
+  vim.keymap.set("n", "<leader>am", function() M.set_model() end,
+    { desc = "Copilot CLI: set model for this chat" })
+  vim.keymap.set("n", "<leader>ad", function() M.set_dir() end,
+    { desc = "Copilot CLI: set working dir to current project" })
 end
 
 return M
