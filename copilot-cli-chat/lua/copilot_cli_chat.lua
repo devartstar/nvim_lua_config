@@ -27,6 +27,14 @@
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("copilot_cli_chat")
+local ns_prog = vim.api.nvim_create_namespace("copilot_cli_chat_progress")
+
+-- In-flight requests, keyed by buffer. Holds the vim.system handle, the poll
+-- timer, timing, cancel flag, and event-log tail offset for live activity.
+local jobs = {}
+-- ASCII spinner (renders in any font — no Nerd/emoji glyphs needed).
+local SPINNER = { "|", "/", "-", "\\" }
+
 
 -- Resolve helper scripts from the plugin's own bin/ (portable across machines),
 -- falling back to ~/.local/bin if they aren't bundled.
@@ -314,7 +322,14 @@ local function set_keymaps(buf)
   end, o)
   -- Keep Ctrl-S as an alternate submit (muscle memory).
   vim.keymap.set("i", "<C-s>", function() do_submit(buf) end, o)
+  -- Cancel an in-flight request (normal mode). Note: insert-mode <C-c> keeps
+  -- its default (leave insert mode) so typing isn't disrupted.
+  vim.keymap.set("n", "<C-c>", function() M.cancel(buf) end, o)
   vim.keymap.set("n", "q", function()
+    if jobs[buf] then
+      vim.notify("A request is running — press <C-c> to cancel first (or wait)", vim.log.levels.WARN)
+      return
+    end
     local win = vim.fn.bufwinid(buf)
     if win ~= -1 then pcall(vim.api.nvim_win_close, win, false) end
   end, o)
@@ -365,6 +380,129 @@ local function show(file)
   return vim.api.nvim_get_current_buf()
 end
 
+-- ── progress + cancel ──────────────────────────────────────────────────────
+
+-- Read new lines appended to the session event log since the last poll and
+-- return a short description of the latest activity (tool being run, etc.).
+local function latest_activity(state)
+  local path = state.ev_path
+  if not path then return state.activity end
+  local st = vim.uv.fs_stat(path)
+  if not st or st.size <= state.ev_off then return state.activity end
+  local fd = vim.uv.fs_open(path, "r", 438)
+  if not fd then return state.activity end
+  local data = vim.uv.fs_read(fd, st.size - state.ev_off, state.ev_off) or ""
+  vim.uv.fs_close(fd)
+  local last_nl = data:match(".*()\n")           -- index just after final newline
+  if not last_nl then return state.activity end   -- no complete line yet
+  state.ev_off = state.ev_off + last_nl - 1
+  for line in data:sub(1, last_nl - 1):gmatch("[^\n]+") do
+    if line:sub(1, 1) == "{" then
+      local ok, o = pcall(vim.json.decode, line)
+      if ok and type(o) == "table" then
+        local t, d = o.type, o.data or {}
+        if t == "tool.execution_start" then
+          local name = d.toolName or "tool"
+          local arg
+          if type(d.arguments) == "table" then
+            arg = d.arguments.command or d.arguments.path or d.arguments.query
+                or d.arguments.pattern or d.arguments.filePath
+          end
+          state.steps = (state.steps or 0) + 1
+          state.activity = "running " .. name .. (arg and (": " .. tostring(arg):gsub("%s+", " ")) or "")
+        elseif t == "assistant.turn_start" then
+          state.activity = "thinking"
+        elseif t == "assistant.message" then
+          state.activity = "writing response"
+        end
+      end
+    end
+  end
+  return state.activity
+end
+
+-- Tear down a finished/cancelled job's timer and state.
+local function finish_job(buf)
+  local st = jobs[buf]
+  if not st then return end
+  if st.timer then
+    st.timer:stop()
+    if not st.timer:is_closing() then st.timer:close() end
+  end
+  if vim.api.nvim_buf_is_valid(buf) then
+    pcall(vim.api.nvim_buf_clear_namespace, buf, ns_prog, 0, -1)
+  end
+  jobs[buf] = nil
+  vim.b[buf].cc_busy = 0
+end
+
+-- Kill a process and all its descendants (specific PIDs, walked via /proc).
+-- vim.system' child shares Neovim's process group, so we must NOT kill by
+-- group; we enumerate descendants and signal each one individually.
+local function kill_tree(root, signal)
+  if not root then return end
+  local parent_of = {}
+  local ok = pcall(function()
+    for name in vim.fs.dir("/proc") do
+      local pid = tonumber(name)
+      if pid then
+        local f = io.open("/proc/" .. pid .. "/stat", "r")
+        if f then
+          local data = f:read("*a"); f:close()
+          local rp = data and data:match("^.*()%)")   -- index of last ')'
+          if rp then
+            local ppid = data:sub(rp + 2):match("^%S+%s+(%d+)")
+            if ppid then parent_of[pid] = tonumber(ppid) end
+          end
+        end
+      end
+    end
+  end)
+  -- collect descendants of root
+  local victims = {}
+  if ok then
+    local changed = true
+    local inset = { [root] = true }
+    while changed do
+      changed = false
+      for pid, ppid in pairs(parent_of) do
+        if inset[ppid] and not inset[pid] then
+          inset[pid] = true; victims[#victims + 1] = pid; changed = true
+        end
+      end
+    end
+  end
+  -- kill deepest-first, then the root
+  for i = #victims, 1, -1 do pcall(vim.uv.kill, victims[i], signal) end
+  pcall(vim.uv.kill, root, signal)
+end
+
+-- Cancel the in-flight request for a chat buffer.
+function M.cancel(buf)
+  buf = buf or vim.api.nvim_get_current_buf()
+  local st = jobs[buf]
+  if not st then
+    vim.notify("No Copilot request is running here", vim.log.levels.INFO)
+    return
+  end
+  st.cancelled = true
+  -- SIGTERM the copilot process AND its descendants (tool subprocesses, server)
+  kill_tree(st.handle and st.handle.pid, 15)
+  local row = st.think_row
+  local secs = math.floor((vim.uv.now() - st.start) / 1000)
+  finish_job(buf)
+  if vim.api.nvim_buf_is_valid(buf) and row and row < vim.api.nvim_buf_line_count(buf) then
+    vim.api.nvim_buf_set_lines(buf, row, row + 1, false,
+      { "_(cancelled after " .. secs .. "s" .. (st.steps and st.steps > 0 and (", " .. st.steps .. " steps") or "") .. ")_" })
+    local n = vim.api.nvim_buf_line_count(buf)
+    vim.api.nvim_buf_set_lines(buf, n, n, false, { "", "---", "" })
+    new_input(buf)
+    apply_fold_opts(buf)
+    save(buf)
+  end
+  vim.notify("Copilot request cancelled", vim.log.levels.INFO)
+end
+
 -- ── public API ─────────────────────────────────────────────────────────────
 
 function M.send(buf)
@@ -395,7 +533,7 @@ function M.send(buf)
 
   local block = { "## You", "" }
   for _, l in ipairs(plines) do block[#block + 1] = l end
-  vim.list_extend(block, { "", "## Copilot", "", "_...thinking..._" })
+  vim.list_extend(block, { "", "## Copilot", "", "_working..._" })
   vim.api.nvim_buf_set_lines(buf, start, -1, false, block)
   local think_row = vim.api.nvim_buf_line_count(buf) - 1
   vim.b[buf].cc_busy = 1
@@ -414,10 +552,42 @@ function M.send(buf)
     args[#args + 1] = "--agent"
   end
 
-  vim.system(args, { stdin = prompt, text = true }, function(res)
+  -- Per-request state for live progress + cancellation. The anchor row is fixed
+  -- (nothing edits above it mid-request), so the progress line updates in place.
+  local ev_path = vim.fn.expand("~/.copilot/session-state/" .. vim.b[buf].cc_sid .. "/events.jsonl")
+  local ev_st = vim.uv.fs_stat(ev_path)
+  local state = {
+    start = vim.uv.now(),
+    frame = 0,
+    cancelled = false,
+    ev_path = ev_path,
+    ev_off = ev_st and ev_st.size or 0,   -- only report NEW activity
+    activity = "thinking",
+    steps = 0,
+    think_row = think_row,
+  }
+  jobs[buf] = state
+
+  -- Poll timer: animate spinner, elapsed time, and current activity in place.
+  state.timer = vim.uv.new_timer()
+  state.timer:start(150, 150, vim.schedule_wrap(function()
+    if not jobs[buf] or state.cancelled or not vim.api.nvim_buf_is_valid(buf) then return end
+    local row = state.think_row
+    if row >= vim.api.nvim_buf_line_count(buf) then return end
+    state.frame = state.frame + 1
+    local secs = math.floor((vim.uv.now() - state.start) / 1000)
+    local act = latest_activity(state) or "thinking"
+    local line = string.format("_%s  %ds · %s · <C-c> to cancel_",
+      SPINNER[state.frame % #SPINNER + 1], secs, act)
+    pcall(vim.api.nvim_buf_set_lines, buf, row, row + 1, false, { line })
+  end))
+
+  state.handle = vim.system(args, { stdin = prompt, text = true }, function(res)
     vim.schedule(function()
-      if not vim.api.nvim_buf_is_valid(buf) then return end
-      vim.b[buf].cc_busy = 0
+      if state.cancelled then return end
+      if not vim.api.nvim_buf_is_valid(buf) then finish_job(buf); return end
+      local row = state.think_row
+      finish_job(buf)
       local resp
       if res.code == 0 and res.stdout and #res.stdout > 0 then
         resp = res.stdout
@@ -434,7 +604,7 @@ function M.send(buf)
       end
       vim.list_extend(rlines, fold_lines(reasoning))
       vim.list_extend(rlines, vim.split(resp, "\n", { plain = true }))
-      vim.api.nvim_buf_set_lines(buf, think_row, think_row + 1, false, rlines)
+      vim.api.nvim_buf_set_lines(buf, row, row + 1, false, rlines)
       local n = vim.api.nvim_buf_line_count(buf)
       vim.api.nvim_buf_set_lines(buf, n, n, false, { "", "---", "" })
       new_input(buf)
@@ -812,6 +982,8 @@ function M.setup()
   })
   vim.api.nvim_create_user_command("CopilotCliSend", function() M.send() end,
     { desc = "Send the current Copilot CLI chat input" })
+  vim.api.nvim_create_user_command("CopilotCliCancel", function() M.cancel() end,
+    { desc = "Cancel the in-flight Copilot request" })
   vim.api.nvim_create_user_command("CopilotCliSessions", function() M.switch() end,
     { desc = "Switch Copilot CLI chat session (in place)" })
   vim.api.nvim_create_user_command("CopilotCliSwitch", function() M.switch() end,
