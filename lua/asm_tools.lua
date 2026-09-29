@@ -16,18 +16,128 @@
 -- Commands (any path): :Objdump / :ObjdumpSrc / :Readelf / :Nm / :Odis / :OdisSrc
 local M = {}
 
--- Open a scratch buffer named <title> holding <lines>, filetype <ft>.
-local function scratch(title, lines, ft)
+-- ---- presentation: highlights, window chrome, header, folds --------------
+
+-- Define highlight groups once. They LINK to standard groups so whatever
+-- colorscheme is active drives the palette (stays consistent on theme change).
+local hl_done = false
+local function ensure_highlights()
+  if hl_done then return end
+  hl_done = true
+  local set = function(name, link) vim.api.nvim_set_hl(0, name, { link = link, default = true }) end
+  set("AsmToolTitle",   "Title")
+  set("AsmToolRule",    "NonText")
+  set("AsmToolMeta",    "Comment")
+  set("AsmObjSection",  "Statement")
+  set("AsmObjFunc",     "Function")
+  set("AsmObjAddr",     "LineNr")
+  set("AsmObjMnem",     "Keyword")
+  set("AsmObjReg",      "Identifier")
+  set("AsmObjNum",      "Number")
+  set("AsmObjComment",  "Comment")
+  set("AsmObjTarget",   "Special")
+  set("AsmReKey",       "Label")
+  set("AsmReSection",   "Function")
+  set("AsmReNum",       "Number")
+  set("AsmNmAddr",      "LineNr")
+  set("AsmNmType",      "Keyword")
+end
+
+-- Reading-optimised, distraction-free window chrome for an output pane.
+local function dress_window(win)
+  local wo = vim.wo[win]
+  wo.wrap = false
+  wo.number = false
+  wo.relativenumber = false
+  wo.signcolumn = "no"
+  wo.cursorline = true
+  wo.cursorlineopt = "line"
+  wo.colorcolumn = ""
+  wo.list = false
+  wo.foldcolumn = "0"
+  wo.scrolloff = 4
+  wo.fillchars = "fold: ,eob: "
+end
+
+-- window-scoped matchadd helper
+local function m(win, group, pat, prio)
+  pcall(vim.fn.matchadd, group, pat, prio or 10, -1, { window = win })
+end
+
+-- Syntax colouring for each artefact kind, applied as window matches so we
+-- stay dependency-free (no per-filetype syntax files to ship).
+local function paint(win, kind)
+  -- header (first two lines) is common to every kind
+  m(win, "AsmToolTitle", "\\%1l.*", 30)
+  m(win, "AsmToolRule",  "\\%2l.*", 30)
+  if kind == "objdump" then
+    m(win, "AsmObjComment", "#.*$", 25)
+    m(win, "AsmObjSection", "^Disassembly of section .*$", 12)
+    m(win, "AsmObjSection", "^.*file format .*$", 12)
+    m(win, "AsmObjFunc",    "<[^>]*>:\\?", 16)            -- labels & call targets
+    m(win, "AsmObjAddr",    "^\\s*[0-9a-f]\\+:", 10)      -- address column
+    m(win, "AsmObjAddr",    "^[0-9a-f]\\+\\ze <", 10)     -- label address prefix
+    m(win, "AsmObjMnem",    "^\\s*[0-9a-f]\\+:\\s\\+\\zs[a-z][a-z0-9.]\\+", 12)
+    m(win, "AsmObjNum",     "0x[0-9a-f]\\+", 11)
+    m(win, "AsmObjReg",
+      "\\v<(r[abcds][xip]|e?[abcd]x|e?[sd]i|e?[bs]p|[abcd][hl]|r[0-9]+[dwb]?|[cdefgs]s|[xy]mm[0-9]+|[re]?ip)>", 11)
+  elseif kind == "readelf" then
+    m(win, "AsmReSection", "\\.[a-zA-Z][a-zA-Z0-9._-]*", 11)
+    m(win, "AsmReKey",     "^\\s*\\zs[A-Za-z][A-Za-z0-9_ ]*\\ze:", 10)
+    m(win, "AsmReNum",     "0x[0-9a-fA-F]\\+", 12)
+  elseif kind == "nm" then
+    m(win, "AsmNmAddr", "^[0-9a-f]\\+", 10)
+    m(win, "AsmNmType", "^[0-9a-f ]\\+\\zs[A-Za-z]\\ze ", 12)
+  end
+end
+
+-- Fold text for objdump function blocks: "▸ name    (N lines)".
+function M.foldtext()
+  local first = vim.fn.getline(vim.v.foldstart)
+  local name = first:match("<(.-)>") or first
+  local n = vim.v.foldend - vim.v.foldstart
+  return "  ▸ " .. name .. "    (" .. n .. " lines)"
+end
+
+-- Render <lines> into a fresh, dressed scratch pane with a titled header.
+--   kind  : "objdump" | "readelf" | "nm" | "asm"  (drives colouring)
+--   name  : short label shown in the title (usually a filename)
+--   desc  : the tool/subtitle, e.g. "objdump -d -M intel"
+local function render(kind, name, desc, lines)
+  ensure_highlights()
+  local width = math.min(78, math.max(40, vim.o.columns - 4))
+  local left = "  " .. desc .. "  ·  " .. name
+  local header = {
+    left,
+    string.rep("─", width),
+    "",
+  }
+  local body = {}
+  vim.list_extend(body, header)
+  vim.list_extend(body, lines)
+
   vim.cmd("enew")
   local buf = vim.api.nvim_get_current_buf()
+  local win = vim.api.nvim_get_current_win()
   vim.bo[buf].buftype = "nofile"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
-  pcall(vim.api.nvim_buf_set_name, buf, title)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  pcall(vim.api.nvim_buf_set_name, buf, kind .. "://" .. name)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, body)
   vim.bo[buf].modifiable = false
-  if ft then vim.bo[buf].filetype = ft end
-  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  vim.bo[buf].filetype = (kind == "objdump") and "asm" or ""
+
+  dress_window(win)
+  paint(win, kind)
+  vim.keymap.set("n", "q", "<cmd>bwipeout!<cr>", { buffer = buf, nowait = true, desc = "close" })
+  vim.api.nvim_win_set_cursor(win, { 1, 0 })
+  return win
+end
+
+-- Back-compat thin wrapper (kind derived from the "kind://name" title style).
+local function scratch(title, lines, ft)
+  local kind, name = title:match("^(%w+)://(.*)$")
+  render(kind or "asm", name or title, kind or "output", lines)
 end
 
 -- Resolve the target file: an explicit arg, else the current buffer's file.
@@ -136,25 +246,30 @@ function M.objdump(arg, with_source)
   end
 
   local cmd = { "objdump", "-d", "-M", "intel", "--no-show-raw-insn" }
-  if with_source then cmd = { "objdump", "-S", "-l", "-M", "intel" } end
+  local desc = "objdump -d -M intel"
+  if with_source then
+    cmd = { "objdump", "-S", "-l", "-M", "intel" }
+    desc = "objdump -S -l (source)"
+  end
   table.insert(cmd, target)
-  scratch("objdump://" .. vim.fn.fnamemodify(f, ":t"), run(cmd), "asm")
+  local win = render("objdump", vim.fn.fnamemodify(f, ":t"), desc, run(cmd))
   -- Fold each function block: objdump prints "<name>:" as a label line.
-  vim.wo.foldmethod = "expr"
-  vim.wo.foldexpr = "getline(v:lnum)=~'^[0-9a-f]* <.*>:' ? '>1' : '1'"
-  vim.wo.foldenable = false
+  vim.wo[win].foldmethod = "expr"
+  vim.wo[win].foldexpr = "getline(v:lnum)=~'^[0-9a-f]* <.*>:' ? '>1' : '1'"
+  vim.wo[win].foldtext = "v:lua.require'asm_tools'.foldtext()"
+  vim.wo[win].foldenable = false
 end
 
 function M.readelf(arg)
   local f = need_file(arg); if not f then return end
-  scratch("readelf://" .. vim.fn.fnamemodify(f, ":t"),
-    run({ "readelf", "-a", "-W", f }), "")
+  render("readelf", vim.fn.fnamemodify(f, ":t"), "readelf -a -W",
+    run({ "readelf", "-a", "-W", f }))
 end
 
 function M.nm(arg)
   local f = need_file(arg); if not f then return end
-  scratch("nm://" .. vim.fn.fnamemodify(f, ":t"),
-    run({ "nm", "-C", "--defined-only", "-n", f }), "")
+  render("nm", vim.fn.fnamemodify(f, ":t"), "nm -C --defined-only -n",
+    run({ "nm", "-C", "--defined-only", "-n", f }))
 end
 
 -- ---- :Odis — build the project, then disassemble the CURRENT file's object ---

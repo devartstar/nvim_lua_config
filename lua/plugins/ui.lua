@@ -62,7 +62,7 @@ return {
         { '<leader>m', group = '[M]arkdown' },
         { '<leader>n', group = '[N]otes / zk · tasks' },
         { '<leader>p', group = '[P]DF' },
-        { '<leader>o', group = '[O]bjdump / ASM' },
+        { '<leader>o', group = '[O]bjdump / ASM', icon = { icon = '', color = 'orange' } },
         { '<leader>r', group = '[R]un / Tasks' },
       },
     },
