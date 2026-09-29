@@ -11,7 +11,9 @@
 --   :Nm [file]          nm -C --defined-only, address-sorted
 --
 -- Keymaps (under <leader>o — "Objdump / ASM"):
---   <leader>oo disasm   <leader>oS disasm+source   <leader>oe readelf   <leader>on nm
+--   <leader>od build+disasm this file   <leader>oD +source
+--   <leader>oe readelf   <leader>on nm
+-- Commands (any path): :Objdump / :ObjdumpSrc / :Readelf / :Nm / :Odis / :OdisSrc
 local M = {}
 
 -- Open a scratch buffer named <title> holding <lines>, filetype <ft>.
@@ -66,51 +68,68 @@ end
 
 local SRC_EXT = { c = true, cc = true, cpp = true, cxx = true, ["c++"] = true }
 
--- Compile <f> to a throwaway object (with debug info) so it can be disassembled.
--- Returns (object_path, cmd, output). object_path is nil on failure.
-local function compile_temp(f)
-  local ext = (vim.fn.fnamemodify(f, ":e")):lower()
-  local is_cpp = (ext ~= "c")
-  local cc  = is_cpp and (vim.env.CXX or "c++") or (vim.env.CC or "cc")
-  local std = is_cpp and "-std=c++17" or "-std=c11"
-  local out = vim.fn.tempname() .. ".o"
-  local cmd = { cc, "-c", "-g", "-O2", std, f, "-o", out }
-  local res = vim.fn.systemlist(cmd)
-  if vim.v.shell_error ~= 0 then return nil, cmd, res end
-  return out, cmd, res
+-- Nearest ancestor dir containing a Makefile (or .git) — the project root.
+local function find_root(src)
+  local dir = vim.fn.fnamemodify(src, ":p:h")
+  local hit = vim.fs.find({ "Makefile", "makefile", "GNUmakefile", ".git" },
+    { path = dir, upward = true })[1]
+  return hit and vim.fn.fnamemodify(hit, ":h") or nil
 end
 
+-- Map an absolute source path to its built object under <root>/<build_dir>.
+-- Tries build/<relpath>.o first, then the closest-matching <stem>.o under it.
+local function locate_object(root, src)
+  local build = vim.g.odis_build_dir or "build"
+  local rel = src:gsub("^" .. vim.pesc(root .. "/"), "")
+  local relo = rel:gsub("%.%w+$", ".o")
+  local primary = root .. "/" .. build .. "/" .. relo
+  if vim.fn.filereadable(primary) == 1 then return primary end
+
+  local stem = vim.fn.fnamemodify(src, ":t:r")
+  local cands = vim.fn.systemlist({ "find", root .. "/" .. build, "-name", stem .. ".o" })
+  if vim.v.shell_error ~= 0 or #cands == 0 then return primary end
+  -- Prefer the candidate whose trailing directory components match the source.
+  local want = vim.split(vim.fn.fnamemodify(relo, ":h"), "/")
+  local function score(p)
+    local have = vim.split(vim.fn.fnamemodify(p, ":h"), "/")
+    local s, i, j = 0, #want, #have
+    while i >= 1 and j >= 1 and want[i] == have[j] do s = s + 1; i = i - 1; j = j - 1 end
+    return s
+  end
+  table.sort(cands, function(a, b) return score(a) > score(b) end)
+  return cands[1]
+end
+
+-- :Objdump / :ObjdumpSrc — disassemble an object or binary (Intel syntax).
+-- Given an explicit path it dumps that. Given a SOURCE file it dumps that
+-- file's ALREADY-BUILT object (build first with <leader>od / :Odis). It never
+-- tries a bare compile — kernel-style sources need project headers.
 function M.objdump(arg, with_source)
   local f = need_file(arg); if not f then return end
+  f = vim.fn.fnamemodify(f, ":p")
 
-  local disasm_target, temp = f, nil
+  local target = f
   if not is_object(f) then
     local ext = (vim.fn.fnamemodify(f, ":e")):lower()
     if SRC_EXT[ext] then
-      -- Source file: auto-compile a temp object and disassemble that.
-      local obj, cmd, err = compile_temp(f)
-      if not obj then
-        local lines = {
-          "; " .. vim.fn.fnamemodify(f, ":t") .. " is source — auto-compile failed:",
-          "; $ " .. table.concat(cmd, " "), "",
-        }
-        vim.list_extend(lines, err)
-        vim.list_extend(lines, {
-          "",
-          "; This is normal for files that need project headers (e.g. kernel.c).",
-          "; Fixes:",
-          ";   * build it in your project, then  :Objdump path/to/file.o",
-          ";   * or see source->asm live with  <leader>oc  (Compiler Explorer)",
-        })
-        scratch("objdump://" .. vim.fn.fnamemodify(f, ":t"), lines, "asm")
+      local root = find_root(f)
+      local obj = root and locate_object(root, f) or nil
+      if obj and vim.fn.filereadable(obj) == 1 then
+        target = obj
+      else
+        scratch("objdump://" .. vim.fn.fnamemodify(f, ":t"), {
+          "; " .. vim.fn.fnamemodify(f, ":t") .. " is source with no built object yet.",
+          "; Build AND disassemble it in one step with  <leader>od  (:Odis).",
+          obj and ("; (expected object: " .. obj .. ")")
+              or  "; (no Makefile/build dir found above this file)",
+        }, "asm")
         return
       end
-      disasm_target, temp = obj, obj
     else
       scratch("objdump://" .. vim.fn.fnamemodify(f, ":t"), {
         "; not an object file: " .. f,
-        "; objdump disassembles compiled objects/executables.",
-        "; Compile first, then  :Objdump <obj>  — or use  <leader>oc  (Compiler Explorer).",
+        "; :Objdump disassembles compiled objects/binaries.",
+        "; For a source file, use  <leader>od  (:Odis) to build + disassemble.",
       }, "asm")
       return
     end
@@ -118,14 +137,8 @@ function M.objdump(arg, with_source)
 
   local cmd = { "objdump", "-d", "-M", "intel", "--no-show-raw-insn" }
   if with_source then cmd = { "objdump", "-S", "-l", "-M", "intel" } end
-  table.insert(cmd, disasm_target)
-  local out = run(cmd)
-  if temp then
-    table.insert(out, 1, "; (auto-compiled " .. vim.fn.fnamemodify(f, ":t")
-      .. " -> temp .o at -O2 -g)")
-    pcall(os.remove, temp)
-  end
-  scratch("objdump://" .. vim.fn.fnamemodify(f, ":t"), out, "asm")
+  table.insert(cmd, target)
+  scratch("objdump://" .. vim.fn.fnamemodify(f, ":t"), run(cmd), "asm")
   -- Fold each function block: objdump prints "<name>:" as a label line.
   vim.wo.foldmethod = "expr"
   vim.wo.foldexpr = "getline(v:lnum)=~'^[0-9a-f]* <.*>:' ? '>1' : '1'"
@@ -152,39 +165,6 @@ end
 --   vim.g.odis_make      (default "make")   e.g. "make -j8" or "gmake"
 --   vim.g.odis_build_dir (default "build")
 --   vim.g.odis_make_target (default: none — a full build)
-
--- Nearest ancestor dir containing a Makefile (or .git) — the project root.
-local function find_root(src)
-  local dir = vim.fn.fnamemodify(src, ":p:h")
-  local hit = vim.fs.find({ "Makefile", "makefile", "GNUmakefile", ".git" },
-    { path = dir, upward = true })[1]
-  return hit and vim.fn.fnamemodify(hit, ":h") or nil
-end
-
--- Map an absolute source path to its built object under <root>/<build_dir>.
--- Tries build/<relpath>.o first, then falls back to the closest-matching
--- <stem>.o found anywhere under the build dir.
-local function locate_object(root, src)
-  local build = vim.g.odis_build_dir or "build"
-  local rel = src:gsub("^" .. vim.pesc(root .. "/"), "")
-  local relo = rel:gsub("%.%w+$", ".o")
-  local primary = root .. "/" .. build .. "/" .. relo
-  if vim.fn.filereadable(primary) == 1 then return primary end
-
-  local stem = vim.fn.fnamemodify(src, ":t:r")
-  local cands = vim.fn.systemlist({ "find", root .. "/" .. build, "-name", stem .. ".o" })
-  if vim.v.shell_error ~= 0 or #cands == 0 then return primary end
-  -- Prefer the candidate whose trailing directory components match the source.
-  local want = vim.split(vim.fn.fnamemodify(relo, ":h"), "/")
-  local function score(p)
-    local have = vim.split(vim.fn.fnamemodify(p, ":h"), "/")
-    local s, i, j = 0, #want, #have
-    while i >= 1 and j >= 1 and want[i] == have[j] do s = s + 1; i = i - 1; j = j - 1 end
-    return s
-  end
-  table.sort(cands, function(a, b) return score(a) > score(b) end)
-  return cands[1]
-end
 
 function M.odis(arg, with_source)
   local src = need_file(arg); if not src then return end
@@ -254,12 +234,12 @@ function M.setup()
   cmd("OdisSrc",    function(o) M.odis(o.args ~= "" and o.args or nil, true)  end, { nargs = "?", complete = complete })
 
   local map = vim.keymap.set
-  map("n", "<leader>oo", "<cmd>Objdump<cr>",    { desc = "Objdump — disassemble (Intel)" })
-  map("n", "<leader>oS", "<cmd>ObjdumpSrc<cr>", { desc = "Objdump — disasm + source" })
-  map("n", "<leader>oe", "<cmd>Readelf<cr>",    { desc = "Readelf — ELF headers/sections" })
-  map("n", "<leader>on", "<cmd>Nm<cr>",         { desc = "Nm — symbols (sorted)" })
+  -- Primary: build + disassemble the CURRENT file (works for kernel-style
+  -- sources). :Objdump/:ObjdumpSrc remain as commands for explicit paths.
   map("n", "<leader>od", "<cmd>Odis<cr>",       { desc = "Odis — make + disasm this file's .o" })
   map("n", "<leader>oD", "<cmd>OdisSrc<cr>",    { desc = "Odis — make + disasm + source" })
+  map("n", "<leader>oe", "<cmd>Readelf<cr>",    { desc = "Readelf — ELF headers/sections" })
+  map("n", "<leader>on", "<cmd>Nm<cr>",         { desc = "Nm — symbols (sorted)" })
 end
 
 return M

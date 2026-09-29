@@ -15,10 +15,10 @@ return {
       'CEOpenWebsite',
     },
     keys = {
-      { '<leader>oc', '<cmd>CECompile<cr>',     mode = { 'n', 'v' }, desc = 'Compiler Explorer — compile to asm' },
-      { '<leader>ol', '<cmd>CECompileLive<cr>', desc = 'Compiler Explorer — live (recompile on save)' },
-      { '<leader>of', '<cmd>CEFormat<cr>',      desc = 'Compiler Explorer — format source' },
-      { '<leader>ok', '<cmd>CEGotoLabel<cr>',   desc = 'Compiler Explorer — jump to label under cursor' },
+      { '<leader>oc', '<cmd>CECompile<cr>',     mode = { 'n', 'v' }, desc = 'CE (snippets only) — compile to asm' },
+      { '<leader>ol', '<cmd>CECompileLive<cr>', desc = 'CE (snippets only) — live recompile' },
+      { '<leader>of', '<cmd>CEFormat<cr>',      desc = 'CE — format source' },
+      { '<leader>ok', '<cmd>CEGotoLabel<cr>',   desc = 'CE — jump to label under cursor' },
     },
     config = function()
       require('compiler-explorer').setup({
