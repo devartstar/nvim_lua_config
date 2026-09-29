@@ -16,4 +16,5 @@ return {
   require('plugins.clangd'),    -- Clangd specific settings
   require('plugins.markdown'),  -- Markdown browser preview (Mermaid, math)
   require('plugins.tasks'),     -- Task runner (Makefile targets via overseer)
+  require('plugins.ansi_log'),  -- ANSI-colored terminal log / script(1) viewer
 }

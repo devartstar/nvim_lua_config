@@ -163,3 +163,24 @@ end, { desc = "Grep for word under cursor" })
 
 -- The line beneath this is called `modeline`. See `:help modeline`
 -- vim: ts=2 sts=2 sw=2 et
+
+-- >>> keyneighbors: report cursor screen position to the typing overlay >>>
+-- Neovim has no accessibility caret, so we write the cursor's screen cell and
+-- the grid size to a cache file; the keyneighbors overlay converts it to
+-- pixels using the terminal window geometry and floats above the cursor.
+do
+  local cache = vim.env.XDG_CACHE_HOME
+  if not cache or cache == "" then
+    cache = vim.fn.expand("~/.cache")
+  end
+  local kn_file = cache .. "/keyneighbors_nvim"
+  local function kn_report()
+    local line = string.format("%d %d %d %d",
+      vim.fn.screenrow(), vim.fn.screencol(), vim.o.lines, vim.o.columns)
+    pcall(vim.fn.writefile, { line }, kn_file)
+  end
+  vim.api.nvim_create_autocmd(
+    { "CursorMoved", "CursorMovedI", "InsertEnter" },
+    { callback = kn_report, desc = "keyneighbors cursor report" })
+end
+-- <<< keyneighbors <<<

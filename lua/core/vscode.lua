@@ -145,4 +145,3 @@ map('n', '<leader>zR', action('editor.unfoldAll'), { desc = 'Open all folds' })
 map('n', '<leader>zM', action('editor.foldAll'), { desc = 'Close all folds' })
 map('n', '<leader>zr', action('editor.unfoldAll'), { desc = 'Open one level of folds' })
 map('n', '<leader>zm', action('editor.foldAll'), { desc = 'Close one level of folds' })
-

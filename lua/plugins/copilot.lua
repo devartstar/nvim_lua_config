@@ -255,6 +255,9 @@ return {
         })
       end
       vim.keymap.set("n", "<leader>cf", copilot_chat_with_file, { desc = "CopilotChat - Chat with a file" })
+
+      -- Per-folder chat sessions + branching (see lua/copilot_sessions.lua).
+      require("copilot_sessions").setup_keymaps()
     end,
     keys = {
       -- Toggle the floating chat window from any mode (normal, insert, visual,
@@ -266,6 +269,9 @@ return {
         desc = "CopilotChat - Toggle window",
       },
       { "<C-g>", "<cmd>CopilotChatToggle<CR>", mode = { "n", "i", "x", "t" }, desc = "CopilotChat - Toggle window" },
+      -- Switch the active model mid-chat (opens a picker). You can also type
+      -- `$<model>` on a line in the chat buffer to switch inline (see notes).
+      { "<leader>cm", "<cmd>CopilotChatModels<CR>", mode = { "n", "x" }, desc = "CopilotChat - Select model" },
       { "<leader>ce", chat_action("CopilotChatExplain"), mode = { "n", "x" }, desc = "CopilotChat - Explain code" },
       { "<leader>ct", chat_action("CopilotChatTests"), mode = { "n", "x" }, desc = "CopilotChat - Generate tests" },
       { "<leader>cr", chat_action("CopilotChatReview"), mode = { "n", "x" }, desc = "CopilotChat - Review code" },

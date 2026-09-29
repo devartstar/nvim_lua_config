@@ -9,6 +9,24 @@ keymap('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q
 -- Terminal escape
 keymap('t', '<Esc><Esc>', '<C-\\><C-n>', { desc = 'Exit terminal mode' })
 
+-- Seamless editor <-> terminal (Codex) focus without leaving insert first.
+-- Only left/right are mapped: the Codex panel is a right-hand vertical split,
+-- and Ctrl-j / Ctrl-k are left untouched so Codex keeps them (e.g. newline).
+keymap('t', '<C-h>', '<C-\\><C-n><C-w>h', { desc = 'Focus window left (leave terminal)' })
+keymap('t', '<C-l>', '<C-\\><C-n><C-w>l', { desc = 'Focus window right (leave terminal)' })
+
+-- NOTE: the global <C-\> "scratch shell" toggle (works from inside Codex / any
+-- terminal) is defined in lua/plugins/terminal.lua, next to the terminal it
+-- drives, so it stays in sync with that dedicated instance.
+
+-- Inline Codex chat (Option B). Backed by the up-to-date `codex exec` (ChatGPT
+-- Plus, every model incl. max/ultra, reads repo files) instead of the broken
+-- codex-acp bridge. Renders as a markdown split — see lua/codex_chat.lua.
+keymap('n', '<leader>xi', function() require('codex_chat').open() end,
+  { desc = 'Codex — inline chat (split)' })
+keymap('n', '<leader>xs', function() require('codex_chat').send() end,
+  { desc = 'Codex — send message' })
+
 -- Window navigation
 keymap('n', '<C-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
 keymap('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })

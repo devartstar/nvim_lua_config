@@ -1,0 +1,20 @@
+-- DISABLED: codecompanion + codex-acp (ACP) cannot work with the current
+-- ChatGPT model backend.
+--
+-- Root cause (verified by driving the bridge directly): zed-industries/codex-acp
+-- v0.16.0 is the newest release (June 2026) and is now deprecated. Its bundled
+-- codex-core only understands reasoning efforts none/minimal/low/medium/high/
+-- xhigh. The live backend now emits `max` and `ultra` for the gpt-5.6-* / gpt-6
+-- models, so codex-acp fails to decode the ENTIRE model list
+-- ("unknown variant `max`") -> zero models load -> every slug reports
+-- "Model metadata for `gpt-5.6-sol` not found" / [ACP::Handler] Internal error.
+-- There is no config fix and no newer codex-acp; codex's own protocol is
+-- app-server, not ACP, so codecompanion cannot speak to it either.
+--
+-- The working Option B replacement is lua/codex_chat.lua: an inline markdown
+-- chat backed by the up-to-date `codex exec` (all models, ChatGPT-Plus auth,
+-- reads repo files). Open it with <leader>xi.
+--
+-- To re-enable this later (if codex-acp is ever updated), restore this spec
+-- from git history.
+return {}

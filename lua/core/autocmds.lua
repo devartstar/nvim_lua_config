@@ -7,6 +7,40 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   end,
 })
 
+-- Read PDFs as text, right inside nvim (backed by poppler's pdftotext; see
+-- lua/pdf.lua). Opening `nvim file.pdf` or `:e file.pdf` extracts the text into
+-- a read-only buffer; <leader>pv opens the real PDF in zathura.
+vim.api.nvim_create_autocmd('BufReadCmd', {
+  desc = 'Open PDFs as extracted text',
+  group = vim.api.nvim_create_augroup('pdf-read', { clear = true }),
+  pattern = '*.pdf',
+  callback = function(ev)
+    require('pdf').open_local(ev.match, ev.buf)
+  end,
+})
+
+-- :Pdf <url>  — download a web PDF and read its text (no arg re-extracts the
+-- current PDF buffer).
+vim.api.nvim_create_user_command('Pdf', function(a)
+  local pdf = require('pdf')
+  if a.args ~= '' then
+    pdf.open_url(a.args)
+  elseif vim.b.pdf_path then
+    pdf.render(vim.api.nvim_get_current_buf(), vim.b.pdf_path, { display = vim.b.pdf_display })
+  else
+    vim.notify('Usage: :Pdf <url-to-pdf>', vim.log.levels.INFO)
+  end
+end, { nargs = '?', desc = 'Open a web PDF as text (or re-extract current)' })
+
+-- :PdfFind [dir]  — fuzzy-find PDFs on disk and open the chosen one in zathura.
+vim.api.nvim_create_user_command('PdfFind', function(a)
+  require('pdf').find({ cwd = a.args ~= '' and vim.fn.expand(a.args) or nil })
+end, { nargs = '?', complete = 'dir', desc = 'Find a PDF on disk and open it in zathura' })
+
+vim.keymap.set('n', '<leader>pf', function() require('pdf').find() end,
+  { desc = '[P]DF: [F]ind on disk → zathura' })
+
+
 -- Show a list of text lines in a centered floating popup (rounded border to
 -- match the terminal/telescope floats). Closes with q or <Esc>. Reused by the
 -- mermaid renderer and the Makefile dependency graph.
@@ -278,3 +312,11 @@ vim.api.nvim_create_autocmd('FileType', {
     end, { buffer = ev.buf, desc = '[R]un: make dependency [G]raph' })
   end,
 })
+
+-- Task/zk/AI tangle: <leader>na opens the active task's note; visual <leader>na
+-- captures the selection into it. See lua/task_notes.lua.
+require('task_notes').setup()
+
+-- Assembly / machine-code helpers: :Objdump / :ObjdumpSrc / :Readelf / :Nm
+-- (under <leader>o). See lua/asm_tools.lua.
+require('asm_tools').setup()

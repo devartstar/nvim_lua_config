@@ -1,0 +1,5 @@
+# backups / editor cruft
+*.bak
+*.bak.*
+*~
+*.swp

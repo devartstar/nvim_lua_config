@@ -68,6 +68,18 @@ local function default_model()
   return vim.g.copilot_cli_model or DEFAULT_MODEL
 end
 
+-- The active taskwarrior task's description (or nil) — used to auto-name a new
+-- chat after what you're working on. Always editable at the prompt.
+local function active_task_title()
+  local out = vim.fn.system({ "task", "+ACTIVE", "export" })
+  if vim.v.shell_error ~= 0 then return nil end
+  local ok, arr = pcall(vim.json.decode, out)
+  if not ok or type(arr) ~= "table" or not arr[1] then return nil end
+  local d = arr[1].description
+  if d and d ~= "" then return d end
+  return nil
+end
+
 -- Humanize a token count: 1863866 -> "1.9M", 15982 -> "16k".
 local function humanize(n)
   n = tonumber(n) or 0
@@ -98,6 +110,10 @@ local function set_winbar(buf)
   local model = vim.b[buf].cc_model or default_model()
   local tag = vim.b[buf].cc_cloud == 1 and "cloud" or "local"
   local parts = { "%#Title#  Copilot%*  ", model, "  %#Comment#[", tag, "]%*" }
+  local title = vim.b[buf].cc_title
+  if title and title ~= "" then
+    parts[#parts + 1] = "  %#Title#" .. title .. "%*"
+  end
   local dir = vim.b[buf].cc_dir
   if dir and dir ~= "" then
     parts[#parts + 1] = "  %#Directory#" .. vim.fn.fnamemodify(dir, ":~") .. "%*"
@@ -340,11 +356,12 @@ local function init_buffer(buf, file, root, mode)
   local sid, dir = meta(file, root)
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "hide"
+  vim.b[buf].cc_title = read_line(file .. ".title")
 
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   if #lines == 0 or (#lines == 1 and lines[1] == "") then
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-      "# Copilot chat — " .. vim.fn.fnamemodify(file, ":t:r"),
+      "# Copilot chat — " .. (vim.b[buf].cc_title or vim.fn.fnamemodify(file, ":t:r")),
       "",
       "> session `" .. sid .. "`",
       "> mode: " .. (MODE_LABEL[mode] or mode),
@@ -772,7 +789,7 @@ local function fresh_chat(buf, sid, dir, mode, model)
   vim.bo[buf].filetype = "markdown"
   vim.bo[buf].bufhidden = "hide"
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, {
-    "# Copilot chat - " .. (dir ~= "" and vim.fn.fnamemodify(dir, ":t") or "chat"),
+    "# Copilot chat - " .. (vim.b[buf].cc_title or (dir ~= "" and vim.fn.fnamemodify(dir, ":t") or "chat")),
     "",
     "> session `" .. sid .. "` (local, new)",
     "> mode: " .. (MODE_LABEL[mode] or mode),
@@ -807,9 +824,18 @@ local function bind_and_load(buf, file, entry)
     local sid = uuid()
     write_line(file .. ".sid", sid)
     write_line(file .. ".dir", dir)
-    fresh_chat(buf, sid, dir, "agent", model)
-    vim.cmd("startinsert")
-    vim.notify("Started a new session for this chat (dir: " .. dir .. ")", vim.log.levels.INFO)
+    vim.ui.input({ prompt = "Name this chat: ", default = active_task_title() or "" }, function(title)
+      if title and title ~= "" then
+        write_line(file .. ".title", title)
+        vim.b[buf].cc_title = title
+      else
+        vim.fn.delete(file .. ".title")
+        vim.b[buf].cc_title = nil
+      end
+      fresh_chat(buf, sid, dir, "agent", model)
+      vim.cmd("startinsert")
+      vim.notify("Started a new session for this chat (dir: " .. dir .. ")", vim.log.levels.INFO)
+    end)
     return
   end
   local cloud = entry.remote
@@ -818,6 +844,7 @@ local function bind_and_load(buf, file, entry)
   write_line(file .. ".dir", dir)
   vim.b[buf].cc_sid = entry.id
   vim.b[buf].cc_dir = dir
+  vim.b[buf].cc_title = read_line(file .. ".title")
   vim.b[buf].cc_cloud = cloud and 1 or 0
   vim.b[buf].cc_mode = "agent"
   vim.b[buf].cc_model = model
@@ -839,18 +866,30 @@ function M.switch()
   end
   local file = vim.api.nvim_buf_get_name(buf)
   local cur = vim.b[buf].cc_sid
+  local root = project_root()
 
-  local list = { { id = "__new__", title = "+ New session (fresh)", dir = "", ts = "", remote = false } }
-  vim.list_extend(list, store_sessions())
+  -- Partition sessions: this project first (kills the "scattered" feeling),
+  -- then everything else. Newest-first order is preserved within each group.
+  local mine, others = {}, {}
+  for _, e in ipairs(store_sessions()) do
+    if e.dir == root then mine[#mine + 1] = e else others[#others + 1] = e end
+  end
+
+  local newtitle = active_task_title()
+  local newlabel = newtitle and ("+ New chat: " .. newtitle .. " (editable)") or "+ New chat for this project"
+  local list = { { id = "__new__", title = newlabel, dir = root, ts = "", remote = false } }
+  vim.list_extend(list, mine)
+  vim.list_extend(list, others)
 
   vim.ui.select(list, {
-    prompt = "Switch this chat to session:",
+    prompt = "Chat for " .. vim.fn.fnamemodify(root, ":t") .. " (this project first):",
     format_item = function(e)
       if e.id == "__new__" then return e.title end
       local tag = e.remote and "[cloud]" or "[local]"
-      local dirb = e.dir ~= "" and vim.fn.fnamemodify(e.dir, ":t") or "-"
+      local here = (e.dir == root)
+      local dirb = here and "★ here" or (e.dir ~= "" and vim.fn.fnamemodify(e.dir, ":t") or "-")
       local mark = (e.id == cur) and "  <- current" or ""
-      return string.format("%-7s %s  ·  %s  ·  %s%s", tag, e.title, dirb, e.ts, mark)
+      return string.format("%-7s %-9s %s  ·  %s%s", tag, dirb, e.title, e.ts, mark)
     end,
   }, function(choice)
     if choice then bind_and_load(buf, file, choice) end
@@ -883,7 +922,7 @@ function M.refresh(buf)
   end
   while #draft > 0 and draft[#draft]:match("^%s*$") do table.remove(draft) end
 
-  local name = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":t:r")
+  local name = vim.b[buf].cc_title or vim.fn.fnamemodify(vim.api.nvim_buf_get_name(buf), ":t:r")
   local content = {
     "# Copilot chat - " .. name,
     "",
