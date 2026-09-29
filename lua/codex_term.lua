@@ -139,12 +139,12 @@ local function on_open(term)
   end
 end
 
--- Full-screen, borderless float: Codex fills the whole editor area, no side
--- border, no title bar, so the TUI has maximum width and nothing to clip it.
+-- Centered floating window (not full-screen): a comfortable reading card that
+-- leaves a margin around the editor. Rounded border, no title bar clutter.
 local FLOAT_OPTS = {
-  border = "none",
-  width = function() return vim.o.columns end,
-  height = function() return vim.o.lines end,
+  border = "rounded",
+  width = function() return math.floor(vim.o.columns * 0.82) end,
+  height = function() return math.floor(vim.o.lines * 0.82) end,
 }
 
 -- Get (or lazily create) the persistent Codex terminal for a dir + direction.

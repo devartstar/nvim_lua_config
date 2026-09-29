@@ -23,9 +23,21 @@ return {
     },
     {
       "<leader>xF",
+      function() require("codex_ask").ask(false) end,
+      mode = "n",
+      desc = "Codex — ask box (answer in nvim buffer)",
+    },
+    {
+      "<leader>xN",
+      function() require("codex_ask").ask_new() end,
+      mode = "n",
+      desc = "Codex — ask box (new thread)",
+    },
+    {
+      "<leader>xt",
       function() require("codex_term").toggle_float() end,
       mode = "n",
-      desc = "Codex CLI — toggle (centered float)",
+      desc = "Codex CLI — interactive TUI float",
     },
     {
       "<leader>xf",
