@@ -144,6 +144,105 @@ function M.nm(arg)
     run({ "nm", "-C", "--defined-only", "-n", f }), "")
 end
 
+-- ---- :Odis — build the project, then disassemble the CURRENT file's object ---
+-- For files wired into a build tree (kernel.c & friends) godbolt/auto-compile
+-- can't work, but `make` + objdump of the produced .o is exactly right. :Odis
+-- finds the project root, runs make (async, so nvim stays responsive), maps the
+-- source to build/<relpath>.o, and disassembles it. Override with:
+--   vim.g.odis_make      (default "make")   e.g. "make -j8" or "gmake"
+--   vim.g.odis_build_dir (default "build")
+--   vim.g.odis_make_target (default: none — a full build)
+
+-- Nearest ancestor dir containing a Makefile (or .git) — the project root.
+local function find_root(src)
+  local dir = vim.fn.fnamemodify(src, ":p:h")
+  local hit = vim.fs.find({ "Makefile", "makefile", "GNUmakefile", ".git" },
+    { path = dir, upward = true })[1]
+  return hit and vim.fn.fnamemodify(hit, ":h") or nil
+end
+
+-- Map an absolute source path to its built object under <root>/<build_dir>.
+-- Tries build/<relpath>.o first, then falls back to the closest-matching
+-- <stem>.o found anywhere under the build dir.
+local function locate_object(root, src)
+  local build = vim.g.odis_build_dir or "build"
+  local rel = src:gsub("^" .. vim.pesc(root .. "/"), "")
+  local relo = rel:gsub("%.%w+$", ".o")
+  local primary = root .. "/" .. build .. "/" .. relo
+  if vim.fn.filereadable(primary) == 1 then return primary end
+
+  local stem = vim.fn.fnamemodify(src, ":t:r")
+  local cands = vim.fn.systemlist({ "find", root .. "/" .. build, "-name", stem .. ".o" })
+  if vim.v.shell_error ~= 0 or #cands == 0 then return primary end
+  -- Prefer the candidate whose trailing directory components match the source.
+  local want = vim.split(vim.fn.fnamemodify(relo, ":h"), "/")
+  local function score(p)
+    local have = vim.split(vim.fn.fnamemodify(p, ":h"), "/")
+    local s, i, j = 0, #want, #have
+    while i >= 1 and j >= 1 and want[i] == have[j] do s = s + 1; i = i - 1; j = j - 1 end
+    return s
+  end
+  table.sort(cands, function(a, b) return score(a) > score(b) end)
+  return cands[1]
+end
+
+function M.odis(arg, with_source)
+  local src = need_file(arg); if not src then return end
+  src = vim.fn.fnamemodify(src, ":p")
+  local ext = (vim.fn.fnamemodify(src, ":e")):lower()
+  -- Already an object? just disassemble it.
+  if not SRC_EXT[ext] then
+    if is_object(src) then return M.objdump(src, with_source) end
+    vim.notify("Odis: not a C/C++ source or object: " .. src, vim.log.levels.WARN)
+    return
+  end
+
+  local root = find_root(src)
+  if not root then
+    vim.notify("Odis: no Makefile/.git found above " .. src, vim.log.levels.WARN)
+    return
+  end
+
+  -- Assemble the make command (word-split so "make -j8" works).
+  local mcmd = {}
+  for w in (vim.g.odis_make or "make"):gmatch("%S+") do mcmd[#mcmd + 1] = w end
+  vim.list_extend(mcmd, { "-C", root })
+  if vim.g.odis_make_target and #vim.g.odis_make_target > 0 then
+    mcmd[#mcmd + 1] = vim.g.odis_make_target
+  end
+
+  local function after_build(code, output)
+    if code ~= 0 then
+      local lines = { "; make failed (exit " .. code .. ") in " .. root .. ":",
+        "; $ " .. table.concat(mcmd, " "), "" }
+      vim.list_extend(lines, output)
+      scratch("odis://make-error", lines, "asm")
+      return
+    end
+    local obj = locate_object(root, src)
+    if vim.fn.filereadable(obj) == 0 then
+      scratch("odis://" .. vim.fn.fnamemodify(src, ":t"), {
+        "; build succeeded, but no object found for " .. src,
+        "; looked for: " .. obj,
+        "; set  :lua vim.g.odis_build_dir='<dir>'  or run  :Objdump <path>  directly.",
+      }, "asm")
+      return
+    end
+    M.objdump(obj, with_source)
+  end
+
+  vim.notify("Odis: building (" .. table.concat(mcmd, " ") .. ") …")
+  if vim.system then
+    vim.system(mcmd, { text = true }, vim.schedule_wrap(function(res)
+      local out = vim.split((res.stdout or "") .. (res.stderr or ""), "\n", { trimempty = true })
+      after_build(res.code, out)
+    end))
+  else
+    local out = vim.fn.systemlist(mcmd)
+    after_build(vim.v.shell_error, out)
+  end
+end
+
 function M.setup()
   local cmd = vim.api.nvim_create_user_command
   local complete = "file"
@@ -151,12 +250,17 @@ function M.setup()
   cmd("ObjdumpSrc", function(o) M.objdump(o.args, true)  end, { nargs = "?", complete = complete })
   cmd("Readelf",    function(o) M.readelf(o.args) end,        { nargs = "?", complete = complete })
   cmd("Nm",         function(o) M.nm(o.args) end,             { nargs = "?", complete = complete })
+  cmd("Odis",       function(o) M.odis(o.args ~= "" and o.args or nil, false) end, { nargs = "?", complete = complete })
+  cmd("OdisSrc",    function(o) M.odis(o.args ~= "" and o.args or nil, true)  end, { nargs = "?", complete = complete })
 
   local map = vim.keymap.set
   map("n", "<leader>oo", "<cmd>Objdump<cr>",    { desc = "Objdump — disassemble (Intel)" })
   map("n", "<leader>oS", "<cmd>ObjdumpSrc<cr>", { desc = "Objdump — disasm + source" })
   map("n", "<leader>oe", "<cmd>Readelf<cr>",    { desc = "Readelf — ELF headers/sections" })
   map("n", "<leader>on", "<cmd>Nm<cr>",         { desc = "Nm — symbols (sorted)" })
+  map("n", "<leader>od", "<cmd>Odis<cr>",       { desc = "Odis — make + disasm this file's .o" })
+  map("n", "<leader>oD", "<cmd>OdisSrc<cr>",    { desc = "Odis — make + disasm + source" })
 end
 
 return M
+
