@@ -18,10 +18,10 @@
 -- Keymaps (registered in lua/plugins/codex_terminal.lua):
 --   <leader>xx  toggle Codex for the current project (side split)
 --   <leader>xX  toggle Codex scoped to Neovim's :pwd
---   <leader>xF  toggle Codex as a full-screen, borderless float
+--   <leader>xF  toggle Codex as a centered float
 --   <leader>xf  attach the current file to the Codex prompt (@path)
---   <leader>xr  resume a past Codex session for this project (picker)
---   <leader>xR  resume from ALL projects' sessions (picker)
+--   <leader>xr  resume a past Codex session for this project (float picker)
+--   <leader>xR  resume from ALL projects' sessions (float picker)
 --   <leader>xl  continue the most recent Codex session (no picker)
 -- Inside the Codex window:
 --   q            (normal mode) hide Codex without killing the session
@@ -226,17 +226,18 @@ local function run(cmd, name, direction)
   }):toggle()
 end
 
--- Resume a past session via Codex's picker. all=true lists every project.
+-- Resume a past session via Codex's picker (in a centered float so the session
+-- list is easy to read). all=true lists every project.
 function M.resume(all)
   if not checks_ok() then return end
   run(all and "codex resume --all" or "codex resume",
-    all and "Codex resume (all)" or "Codex resume")
+    all and "Codex resume (all)" or "Codex resume", "float")
 end
 
 -- Continue the most recent Codex session for this project (no picker).
 function M.resume_last()
   if not checks_ok() then return end
-  run("codex resume --last", "Codex (last)")
+  run("codex resume --last", "Codex (last)", "float")
 end
 
 return M
