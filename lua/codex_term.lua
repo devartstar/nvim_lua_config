@@ -27,7 +27,10 @@
 --   q            (normal mode) hide Codex without killing the session
 --   <Esc><Esc>   leave terminal-insert mode, then scroll freely (k / <C-u> /
 --                /search) — Codex runs inline (--no-alt-screen) so Neovim keeps
---                scrollback and the cursor no longer snaps to the prompt.
+--                scrollback, and auto-scroll is OFF for Codex so a live spinner
+--                (e.g. the Astra model's animation) no longer yanks you back to
+--                the bottom on every repaint. Re-enable with
+--                vim.g.codex_auto_scroll = true.
 ---------------------------------------------------------------------------
 
 local M = {}
@@ -174,6 +177,7 @@ local function get_term(dir, direction, cmd)
     direction = direction,
     size = size_for(direction),
     close_on_exit = true,
+    auto_scroll = vim.g.codex_auto_scroll == true,
     display_name = "Codex",
     float_opts = direction == "float" and FLOAT_OPTS or nil,
     on_open = on_open,
@@ -231,6 +235,7 @@ local function run(cmd, name, direction)
     direction = direction,
     size = size_for(direction),
     close_on_exit = true,
+    auto_scroll = vim.g.codex_auto_scroll == true,
     display_name = name,
     float_opts = direction == "float" and FLOAT_OPTS or nil,
     on_open = on_open,
