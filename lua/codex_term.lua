@@ -18,7 +18,7 @@
 -- Keymaps (registered in lua/plugins/codex_terminal.lua):
 --   <leader>xx  toggle Codex for the current project (side split)
 --   <leader>xX  toggle Codex scoped to Neovim's :pwd
---   <leader>xF  toggle Codex as a centered float instead
+--   <leader>xF  toggle Codex as a full-screen, borderless float
 --   <leader>xf  attach the current file to the Codex prompt (@path)
 --   <leader>xr  resume a past Codex session for this project (picker)
 --   <leader>xR  resume from ALL projects' sessions (picker)
@@ -96,37 +96,27 @@ local function on_close(term)
   end
 end
 
--- Common on_open: map `q` to hide (keeps the session alive). On the FIRST open
--- drop into insert at the prompt; on later opens restore the saved view and
--- stay in normal mode so your reading position is preserved.
+-- Common on_open: map `q` to hide (keeps the session alive), strip UI chrome
+-- (no numbers/signcolumn/fold gutter) so Codex's own TUI renders full-width and
+-- unbroken. On the FIRST open drop into insert at the prompt; on later opens
+-- restore the saved view and stay in normal mode so your reading position is
+-- preserved. In the window: insert (terminal) mode types to Codex, <Esc><Esc>
+-- drops to normal mode for hjkl/scroll navigation.
 local function on_open(term)
   vim.keymap.set("n", "q", function() term:close() end,
     { buffer = term.bufnr, nowait = true, desc = "Hide Codex" })
 
-  -- <C-p> "peek/grab": freeze Codex's current screen into a scratch buffer you
-  -- can scroll/search/visually-select freely (Codex repaints its live view, so
-  -- the cursor otherwise snaps back to the bottom). y -> clipboard; q -> back to
-  -- Codex. Buffer-local so it never clashes with the global <C-g> CopilotChat.
-  vim.keymap.set({ "n", "t" }, "<C-p>", function()
-    local tb = term.bufnr
-    if not (tb and vim.api.nvim_buf_is_valid(tb)) then return end
-    local lines = vim.api.nvim_buf_get_lines(tb, 0, -1, false)
-    while #lines > 0 and lines[#lines]:match("^%s*$") do table.remove(lines) end
-    local buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-    vim.bo[buf].bufhidden = "wipe"
-    vim.api.nvim_set_current_buf(buf)
-    vim.cmd("stopinsert")
-    pcall(vim.api.nvim_win_set_cursor, 0, { math.max(1, #lines), 0 })
-    vim.keymap.set("n", "q", function()
-      if vim.api.nvim_buf_is_valid(tb) then
-        vim.api.nvim_set_current_buf(tb)
-        vim.cmd("startinsert")
-      end
-    end, { buffer = buf, silent = true, desc = "Back to Codex" })
-  end, { buffer = term.bufnr, silent = true, desc = "Grab Codex screen to scratch" })
-
   local win = term.window
+  if win and vim.api.nvim_win_is_valid(win) then
+    local wo = vim.wo[win]
+    wo.number = false
+    wo.relativenumber = false
+    wo.signcolumn = "no"
+    wo.foldcolumn = "0"
+    wo.cursorline = false
+    wo.list = false
+  end
+
   if term._codex_view and win and vim.api.nvim_win_is_valid(win) then
     local view = term._codex_view
     -- Restore now, then again on the next ticks: reopening the float resizes
@@ -149,11 +139,12 @@ local function on_open(term)
   end
 end
 
+-- Full-screen, borderless float: Codex fills the whole editor area, no side
+-- border, no title bar, so the TUI has maximum width and nothing to clip it.
 local FLOAT_OPTS = {
-  border = "curved",
-  title_pos = "center",
-  width = function() return math.floor(vim.o.columns * 0.88) end,
-  height = function() return math.floor(vim.o.lines * 0.88) end,
+  border = "none",
+  width = function() return vim.o.columns end,
+  height = function() return vim.o.lines end,
 }
 
 -- Get (or lazily create) the persistent Codex terminal for a dir + direction.
