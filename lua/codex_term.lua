@@ -25,7 +25,9 @@
 --   <leader>xl  continue the most recent Codex session (no picker)
 -- Inside the Codex window:
 --   q            (normal mode) hide Codex without killing the session
---   <Esc><Esc>   leave terminal-insert mode (your global mapping)
+--   <Esc><Esc>   leave terminal-insert mode, then scroll freely (k / <C-u> /
+--                /search) — Codex runs inline (--no-alt-screen) so Neovim keeps
+--                scrollback and the cursor no longer snaps to the prompt.
 ---------------------------------------------------------------------------
 
 local M = {}
@@ -46,6 +48,16 @@ end
 
 local function default_width()
   return tonumber(vim.g.codex_width) or 0.42
+end
+
+-- Append inline mode to a codex command. `--no-alt-screen` makes Codex render
+-- INLINE and preserve terminal scrollback, so inside Neovim you can hit
+-- <Esc><Esc> and scroll up (k / <C-u> / search) to read history WITHOUT the
+-- alt-screen TUI repainting and snapping the cursor back to the prompt.
+-- Opt out (classic full-screen TUI) with: vim.g.codex_no_alt_screen = false
+local function with_inline(cmd)
+  if vim.g.codex_no_alt_screen == false then return cmd end
+  return cmd .. " --no-alt-screen"
 end
 
 -- Walk upward from the current file (or cwd) to the nearest project marker.
@@ -156,7 +168,7 @@ local function get_term(dir, direction, cmd)
   end
 
   local t = Terminal():new({
-    cmd = cmd or "codex",
+    cmd = cmd or with_inline("codex"),
     dir = dir,
     hidden = true,
     direction = direction,
@@ -230,14 +242,14 @@ end
 -- list is easy to read). all=true lists every project.
 function M.resume(all)
   if not checks_ok() then return end
-  run(all and "codex resume --all" or "codex resume",
+  run(with_inline(all and "codex resume --all" or "codex resume"),
     all and "Codex resume (all)" or "Codex resume", "float")
 end
 
 -- Continue the most recent Codex session for this project (no picker).
 function M.resume_last()
   if not checks_ok() then return end
-  run("codex resume --last", "Codex (last)", "float")
+  run(with_inline("codex resume --last"), "Codex (last)", "float")
 end
 
 return M
