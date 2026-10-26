@@ -61,8 +61,43 @@ Install-Winget 'Git.Git'          'git'
 Install-Winget 'Neovim.Neovim'    'nvim'
 Install-Winget 'zig.zig'          'zig'
 Install-Winget 'Microsoft.VisualStudioCode' 'code'
+Install-Winget 'BrechtSanders.WinLibs.POSIX.UCRT' 'gcc'   # gcc, objdump, mingw32-make
+Install-Winget 'LLVM.LLVM'        'clangd'
+Install-Winget 'sharkdp.fd'       'fd'
+Install-Winget 'BurntSushi.ripgrep.MSVC' 'rg'
 
-# Make freshly-installed tools visible in this session.
+# Tools with no winget package: fetch the GitHub release binaries into one dir on the user PATH.
+$ToolsDir = Join-Path $env:LOCALAPPDATA 'Programs\tools'
+New-Item -ItemType Directory -Force $ToolsDir | Out-Null
+
+function Add-UserPath($p){
+    $u = [Environment]::GetEnvironmentVariable('Path','User')
+    if ($u -notlike "*$p*") { [Environment]::SetEnvironmentVariable('Path', "$u;$p", 'User') }
+}
+Add-UserPath $ToolsDir
+Add-UserPath 'C:\Program Files\LLVM\bin'
+
+# Make freshly-installed tools visible in this session. Also clear a stale GIT_EXEC_PATH
+# (set by some hosts) which breaks git's https helper.
+Remove-Item Env:GIT_EXEC_PATH -ErrorAction SilentlyContinue
+$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
+            [Environment]::GetEnvironmentVariable('Path','User')
+
+# make: WinLibs ships mingw32-make only; telescope-fzf-native and <leader>k need `make`.
+if (-not (Have 'make')) {
+    $mm = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\BrechtSanders.WinLibs*" -Recurse -Filter mingw32-make.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($mm) { Copy-Item $mm.FullName (Join-Path $ToolsDir 'make.exe') -Force; Ok 'make.exe provided' }
+}
+
+# zk (notes) and codex (AI terminal float): GitHub release binaries.
+if (-not (Have 'zk') -and (Have 'gh')) {
+    $a = (gh api repos/zk-org/zk/releases/latest | ConvertFrom-Json).assets | Where-Object { $_.name -match 'windows-x86_64\.tar\.gz$' } | Select-Object -First 1
+    if ($a) { $f = Join-Path $env:TEMP 'zk.tgz'; Invoke-WebRequest $a.browser_download_url -OutFile $f; tar -xzf $f -C $ToolsDir; Remove-Item $f; Ok 'zk installed' }
+}
+if (-not (Have 'codex') -and (Have 'gh')) {
+    gh release download -R openai/codex -p 'codex-x86_64-pc-windows-msvc.exe' -O (Join-Path $ToolsDir 'codex.exe') --clobber
+    Ok 'codex installed'
+}
 $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
             [Environment]::GetEnvironmentVariable('Path','User')
 
@@ -159,7 +194,9 @@ if (Have 'code') {
 # ---------------------------------------------------------------------------
 Info 'Step 5/6: Treesitter parsers (this can take a couple of minutes)'
 if (Test-Path $NvimExe) {
-    & $NvimExe --headless '+Lazy! sync' '+qa' 2>&1 | Out-Null
+    $ErrorActionPreference = 'Continue'   # nvim writes progress to stderr; don't treat it as fatal
+    # 'restore' installs the exact commits in lazy-lock.json ('sync' would update past them).
+    & $NvimExe --headless '+Lazy! restore' '+qa' 2>&1 | Out-Null
     & $NvimExe --headless '+TSUpdateSync' '+qa' 2>&1 | Out-Null
     Ok 'Parsers compiled'
 } else {
